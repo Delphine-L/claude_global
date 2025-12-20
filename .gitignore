@@ -1,0 +1,52 @@
+# Sensitive files
+.env
+.env.*
+*.key
+*.pem
+id_rsa*
+*.p12
+*.pfx
+
+# Settings and local configuration
+.claude/settings.local.json
+settings.local.json
+*.local.json
+
+# Backup files
+*.bak
+*.swp
+*~
+.DS_Store
+.backup-*
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Credentials and secrets
+secrets/
+credentials/
+*secret*
+*credential*
+
+# Node modules (if applicable)
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*

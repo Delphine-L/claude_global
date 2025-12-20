@@ -1,0 +1,1063 @@
+# Galaxy Tool Wrapping Expert Guide
+
+This document contains comprehensive guidelines for wrapping tools for the Galaxy platform, based on IUC (Intergalactic Utilities Commission) best practices.
+
+## Overview
+
+Galaxy tool wrappers are XML files that define how command-line tools integrate into the Galaxy platform. They specify inputs, outputs, parameters, tests, and documentation.
+
+## Repository Structure
+
+A typical Galaxy tool repository contains:
+```
+tool_name/
+├── .shed.yml                          # Tool Shed metadata
+├── tool_name.xml                      # Main tool wrapper
+├── macros.xml                         # Shared macros (for tool suites)
+├── test-data/                         # Test input/output files
+│   ├── input1.fastq.gz
+│   └── output1.tabular
+├── tool-data/                         # Reference data (if needed)
+│   ├── tool_data_table_conf.xml.sample
+│   └── *.loc.sample
+└── static/                            # Images for help section
+    └── images/
+```
+
+## .shed.yml File
+
+Required metadata file for Tool Shed submission. This file defines how the tool appears in the Galaxy Tool Shed.
+
+### Basic Structure
+
+```yaml
+name: tool_name
+owner: iuc
+description: Brief one-line description of the tool
+homepage_url: https://github.com/tool/repo
+long_description: |
+  Detailed multi-line description with more context about what the tool does.
+
+  Can include multiple paragraphs explaining the tool's purpose, features,
+  and use cases.
+remote_repository_url: https://github.com/galaxyproject/tools-iuc/tree/main/tools/tool_name
+type: unrestricted
+categories:
+- Sequence Analysis
+- Statistics
+```
+
+### Field Descriptions
+
+**name**
+- Must be alphanumeric with underscores only (no hyphens `-`)
+- Must match the directory name
+- For single-tool repositories, should match the XML filename (without .xml)
+- For tool suites with multiple tools, use a general suite name
+- Example: `vgp_processcuration`, `diamond`, `shasta`
+
+**owner**
+- Should be `iuc` for tools being submitted to the IUC repository
+- Will be the maintainer organization in the Tool Shed
+- For migration of existing tools, coordinate with IUC team
+
+**description**
+- Single line, concise description (50-100 characters ideal)
+- Appears in Tool Shed search results
+- Should clearly state what the tool does
+- Examples:
+  - `Fast de novo assembly of long read sequencing data`
+  - `ProcessCuration toolkit for genome assembly submission`
+  - `DIAMOND is a new alignment tool for aligning short DNA sequencing reads to a protein reference database`
+
+**homepage_url**
+- Link to the upstream tool's homepage, GitHub repository, or documentation
+- Prefer official tool repository over other sources
+- Example: `https://github.com/vgl-hub/vgl-curation`
+
+**long_description**
+- Multi-line detailed description (use YAML pipe `|` for multi-line)
+- Can include:
+  - What the tool does
+  - Key features and capabilities
+  - Scientific context or use cases
+  - Related tools it works with
+  - For tool suites: list of included tools
+- Supports plain text (no HTML or markdown)
+
+**remote_repository_url**
+- Link to the tool wrapper source code in the Galaxy repository
+- Standard format: `https://github.com/galaxyproject/tools-iuc/tree/main/tools/TOOL_NAME`
+- Replace `TOOL_NAME` with your tool directory name
+
+**type**
+- Almost always `unrestricted`
+- Other types (`repository_suite_definition`, `tool_dependency_definition`) are deprecated
+
+**categories**
+- List of Tool Shed categories (must match predefined categories)
+- Choose 1-3 most relevant categories
+- Common categories shown below
+
+### Common Tool Shed Categories
+
+**Sequence Analysis & Assembly**
+- `Assembly` - Genome assembly tools
+- `Sequence Analysis` - General sequence processing
+- `Variant Analysis` - Variant calling and analysis
+- `RNA` - RNA-Seq and transcriptomics
+- `ChIP-seq` - ChIP-Seq analysis
+
+**Genomics & Genetics**
+- `Genomics` - General genomics tools
+- `Metagenomics` - Metagenomic analysis
+- `Epigenetics` - Epigenetic analysis
+
+**Functional Analysis**
+- `Genome annotation` - Gene prediction and annotation
+- `Phylogenetics` - Phylogenetic analysis
+
+**Statistics & Visualization**
+- `Statistics` - Statistical analysis
+- `Visualization` - Data visualization tools
+
+**Data Handling**
+- `Convert Formats` - File format conversion
+- `Text Manipulation` - Text processing utilities
+
+**Specialized**
+- `Proteomics` - Protein analysis
+- `Metabolomics` - Metabolite analysis
+- `Systems Biology` - Systems-level analysis
+- `Imaging` - Image analysis
+
+### Example .shed.yml Files
+
+**Example 1: Single assembly tool**
+```yaml
+name: shasta
+owner: iuc
+description: Fast de novo assembly of long read sequencing data
+homepage_url: https://github.com/chanzuckerberg/shasta
+long_description: |
+  The goal of the Shasta long read assembler is to rapidly produce accurate
+  assembled sequence using as input DNA reads generated by Oxford Nanopore flow cells.
+
+  Computational methods used by the Shasta assembler include using a run-length
+  representation of the read sequence and a representation based on markers.
+remote_repository_url: https://github.com/galaxyproject/tools-iuc/tree/main/tools/shasta
+type: unrestricted
+categories:
+- Assembly
+- Nanopore
+```
+
+**Example 2: Tool suite with multiple wrappers**
+```yaml
+name: vgp_processcuration
+owner: iuc
+description: ProcessCuration toolkit for genome assembly submission
+homepage_url: https://github.com/vgl-hub/vgl-curation
+long_description: |
+  ProcessCuration is a Python-based toolkit designed to process manually curated
+  genome assemblies for submission. It reconciles AGP files created in PretextView
+  with genome assembly FASTAs.
+
+  This suite includes three tools:
+  - split_agp: Splits haplotypes and corrects haplotig duplications
+  - chromosome_assignment: Assigns chromosome names to scaffolds
+  - sak_generation: Generates SAK instructions for final assembly renaming
+remote_repository_url: https://github.com/galaxyproject/tools-iuc/tree/main/tools/vgp_processcuration
+type: unrestricted
+categories:
+- Assembly
+- Genomics
+```
+
+**Example 3: Sequence analysis tool**
+```yaml
+name: diamond
+owner: bgruening
+description: DIAMOND is a new alignment tool for aligning short DNA sequencing reads to a protein reference database
+homepage_url: https://github.com/bbuchfink/diamond
+long_description: |
+  DIAMOND is a new alignment tool for aligning short DNA sequencing reads to a
+  protein reference database such as NCBI-NR. On Illumina reads of length 100-150bp,
+  in fast mode, DIAMOND is about 20,000 times faster than BLASTX.
+remote_repository_url: https://github.com/galaxyproject/tools-iuc/tree/main/tools/diamond
+type: unrestricted
+categories:
+- Sequence Analysis
+```
+
+### Best Practices
+
+1. **Name consistency**: Ensure the name matches your directory and (for single tools) XML file
+2. **Clear description**: Make it immediately obvious what the tool does
+3. **Detailed long_description**: Include enough context for users to understand the tool's purpose
+4. **Correct categories**: Choose categories that users would expect when searching
+5. **Valid URLs**: Test that both homepage_url and remote_repository_url are accessible
+6. **For tool suites**: List all included tools in the long_description
+7. **Keep it simple**: Avoid special characters, HTML, or markdown in descriptions
+
+### Common Mistakes to Avoid
+
+- Using hyphens in name (use underscores instead)
+- Name doesn't match directory name
+- Missing or invalid categories
+- Long_description as single line (use `|` for multi-line)
+- Broken URLs
+- Missing remote_repository_url
+- Wrong owner (should be `iuc` for IUC tools)
+
+### Validation
+
+After creating `.shed.yml`, validate with:
+```bash
+planemo shed_lint .
+```
+
+This checks for common issues before attempting Tool Shed upload.
+
+## Tool XML Structure
+
+### Overall Order of Elements
+
+The XML elements should appear in this order:
+
+```xml
+<tool id="tool_id" name="Tool Name" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="23.2">
+    <description>Brief tool description</description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <xrefs>
+        <xref type="bio.tools">tool_name</xref>
+    </xrefs>
+    <requirements>
+        <!-- Dependencies -->
+    </requirements>
+    <stdio>
+        <!-- Error handling -->
+    </stdio>
+    <version_command></version_command>
+    <command detect_errors="aggressive"><![CDATA[
+        <!-- Command template -->
+    ]]></command>
+    <configfiles>
+        <!-- Configuration files if needed -->
+    </configfiles>
+    <inputs>
+        <!-- Input parameters -->
+    </inputs>
+    <outputs>
+        <!-- Output files -->
+    </outputs>
+    <tests>
+        <!-- Test cases -->
+    </tests>
+    <help><![CDATA[
+        <!-- Help documentation in reStructuredText -->
+    ]]></help>
+    <citations>
+        <!-- Citations -->
+    </citations>
+</tool>
+```
+
+### Tool Element Attributes
+
+```xml
+<tool id="tool_id" name="Tool Name" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="23.2" license="GPL-3.0">
+```
+
+- `id`: Unique identifier (lowercase, underscores)
+- `name`: Display name shown to users
+- `version`: Follow PEP 440: `@TOOL_VERSION@+galaxy@VERSION_SUFFIX@`
+- `profile`: Galaxy profile version (e.g., "23.2", "21.01")
+- `license` (optional): Tool license
+
+### Macros
+
+For tool suites with multiple related tools, create a `macros.xml`:
+
+```xml
+<macros>
+    <token name="@TOOL_VERSION@">2.1.13</token>
+    <token name="@VERSION_SUFFIX@">0</token>
+    <token name="@PROFILE@">23.2</token>
+
+    <xml name="requirements">
+        <requirements>
+            <requirement type="package" version="@TOOL_VERSION@">tool_name</requirement>
+        </requirements>
+    </xml>
+
+    <xml name="stdio">
+        <stdio>
+            <regex match="Failed to allocate" source="stderr" level="fatal_oom"/>
+            <regex match="Error:" source="stderr" level="fatal"/>
+        </stdio>
+    </xml>
+
+    <xml name="version_command">
+        <version_command>tool_name --version | cut -d" " -f 2</version_command>
+    </xml>
+
+    <xml name="citations">
+        <citations>
+            <citation type="doi">10.1038/s41592-021-01101-x</citation>
+        </citations>
+    </xml>
+
+    <!-- Reusable parameter macros -->
+    <xml name="common_param">
+        <param name="param_name" type="text" label="Parameter Label" help="Help text"/>
+    </xml>
+</macros>
+```
+
+Import macros in the tool XML:
+```xml
+<macros>
+    <import>macros.xml</import>
+</macros>
+```
+
+Use macros:
+```xml
+<expand macro="requirements"/>
+<expand macro="version_command"/>
+```
+
+### Requirements (Dependencies)
+
+Specify conda packages from approved channels:
+
+```xml
+<requirements>
+    <requirement type="package" version="@TOOL_VERSION@">tool_name</requirement>
+    <requirement type="package" version="1.15">numpy</requirement>
+</requirements>
+```
+
+**Best practices:**
+- Use `@TOOL_VERSION@` token for version consistency
+- Packages must exist in conda channels (bioconda, conda-forge)
+- DO NOT use `tool_dependencies.xml` (deprecated)
+
+### Error Detection
+
+Use one of these approaches:
+
+1. **detect_errors attribute in command element:**
+```xml
+<command detect_errors="aggressive"><![CDATA[
+```
+
+2. **stdio element:**
+```xml
+<stdio>
+    <regex match="Failed to allocate" source="stderr" level="fatal_oom"/>
+    <regex match="Error:" source="stderr" level="fatal"/>
+    <exit_code range="1:" level="fatal"/>
+</stdio>
+```
+
+3. **profile attribute** (modern tools with profile >= 16.04)
+
+### Command Section
+
+The command template uses Cheetah syntax:
+
+```xml
+<command detect_errors="aggressive"><![CDATA[
+## Import Python modules if needed
+#import re
+
+## Set up symbolic links for input files
+#set $mangled_base = re.sub(r"[^\w\-\s]", "_", str($input_file.element_identifier))
+ln -s '$input_file' '$mangled_base' &&
+
+## Build the command
+tool_name
+    --input '$input_file'
+    --output '$output_file'
+    #if str($optional_param) != "":
+        --param '$optional_param'
+    #end if
+    #if $conditional.select == "value1":
+        --flag1 '$conditional.param1'
+    #else if $conditional.select == "value2":
+        --flag2 '$conditional.param2'
+    #end if
+    $boolean_param
+    --threads "\${GALAXY_SLOTS:-4}"
+    #if $advanced.param:
+        --advanced-param $advanced.param
+    #end if
+    > '$log_file' 2>&1
+]]></command>
+```
+
+**Best practices:**
+- Enclose entire command in `<![CDATA[ ... ]]>` tags
+- Use `'single quotes'` around text parameters and paths
+- Join multiple commands with `&&`
+- Check optional text parameters: `#if str($param) != ""`
+- Check optional booleans: `#if $param`
+- Use `\${GALAXY_SLOTS:-4}` for thread count (default to 4)
+- Indent Cheetah code for readability
+- Create temporary files in current working directory
+
+### Inputs
+
+#### Data Parameters
+
+```xml
+<param name="input_file" type="data" format="bam,fastq,fastq.gz"
+       label="Input reads"
+       help="BAM or FASTQ format"/>
+```
+
+#### Text Parameters
+
+```xml
+<param name="text_param" type="text" value="" optional="true"
+       label="Optional text parameter"
+       help="Description of parameter">
+    <validator type="regex">^[A-Za-z0-9_-]+$</validator>
+</param>
+```
+
+#### Integer/Float Parameters
+
+```xml
+<param name="int_param" type="integer" value="100" min="1" max="1000"
+       label="Count"
+       help="Integer between 1 and 1000"/>
+
+<param name="float_param" type="float" value="0.5" min="0" max="1"
+       label="Fraction"
+       help="Value between 0 and 1"/>
+```
+
+#### Boolean Parameters
+
+```xml
+<param name="bool_param" type="boolean" checked="false"
+       truevalue="--enable-feature" falsevalue=""
+       label="Enable feature"
+       help="Check to enable"/>
+```
+
+**Best practices:**
+- Set `truevalue` to the actual command-line flag
+- Set `falsevalue` to empty string or opposing flag
+
+#### Select Parameters
+
+```xml
+<param name="select_param" type="select" label="Choose option">
+    <option value="option1" selected="true">Option 1 (default)</option>
+    <option value="option2">Option 2</option>
+    <option value="option3">Option 3</option>
+</param>
+```
+
+With multiple selection:
+```xml
+<param name="multi_select" type="select" multiple="true" label="Select features">
+    <option value="feat1">Feature 1</option>
+    <option value="feat2">Feature 2</option>
+    <option value="feat3">Feature 3</option>
+</param>
+```
+
+#### Conditional Parameters
+
+Use `conditional` with `select` (NOT boolean):
+
+```xml
+<conditional name="conditional_name">
+    <param name="selector" type="select" label="Choose mode">
+        <option value="mode1">Mode 1</option>
+        <option value="mode2">Mode 2</option>
+    </param>
+    <when value="mode1">
+        <param name="param1" type="text" label="Parameter for mode 1"/>
+    </when>
+    <when value="mode2">
+        <param name="param2" type="integer" label="Parameter for mode 2"/>
+    </when>
+</conditional>
+```
+
+Access in command: `$conditional_name.selector` and `$conditional_name.param1`
+
+#### Sections (for grouping)
+
+```xml
+<section name="advanced" title="Advanced options" expanded="false">
+    <param name="advanced_param1" type="integer" value="10"/>
+    <param name="advanced_param2" type="float" value="0.01"/>
+</section>
+```
+
+Access in command: `$advanced.advanced_param1`
+
+#### Parameter Attributes Order
+
+```xml
+<param name="..."
+       argument="--cli-flag"
+       type="..."
+       format="..."
+       value="..."
+       label="..."
+       help="..."
+       optional="true"/>
+```
+
+**Best practices:**
+- Use `argument` attribute for long-form CLI parameters
+- Include helpful `help` text
+- Keep labels concise
+- Use `optional="true"` for optional parameters
+
+### Outputs
+
+#### Basic Output
+
+```xml
+<outputs>
+    <data name="output_file" format="tabular" label="${tool.name} on ${on_string}"/>
+</outputs>
+```
+
+#### Conditional Outputs (with filters)
+
+```xml
+<outputs>
+    <data name="output1" format="tabular" label="${tool.name} summary">
+        <filter>output_type == 'summary'</filter>
+    </data>
+
+    <data name="output2" format="bam" label="${tool.name} alignments">
+        <filter>output_type == 'alignments'</filter>
+    </data>
+
+    <data name="log_file" format="txt" label="${tool.name} log">
+        <filter>advanced['log']</filter>
+    </data>
+</outputs>
+```
+
+#### Dynamic Format Output
+
+```xml
+<data name="output_reads" format="fasta">
+    <change_format>
+        <when input="output_format" value="fastq" format="fastq"/>
+        <when input="output_format" value="bam" format="bam"/>
+    </change_format>
+</data>
+```
+
+#### Output from Working Directory
+
+```xml
+<data name="output_file" format="txt" from_work_dir="tool_output.txt"
+      label="${tool.name} results"/>
+```
+
+### Tests
+
+Tests are REQUIRED for all tools:
+
+```xml
+<tests>
+    <!-- Test 1: Basic test -->
+    <test expect_num_outputs="1">
+        <param name="input_file" value="input1.fastq" ftype="fastq"/>
+        <param name="param1" value="10"/>
+        <output name="output_file" file="output1.tabular" ftype="tabular"/>
+    </test>
+
+    <!-- Test 2: Test with conditional -->
+    <test expect_num_outputs="2">
+        <param name="input_file" value="input2.fastq.gz" ftype="fastq.gz"/>
+        <conditional name="mode">
+            <param name="selector" value="advanced"/>
+            <param name="advanced_param" value="20"/>
+        </conditional>
+        <output name="output_file" file="output2.tabular"/>
+        <output name="log_file">
+            <assert_contents>
+                <has_text text="Processing complete"/>
+                <has_line line="Total reads: 100"/>
+            </assert_contents>
+        </output>
+    </test>
+
+    <!-- Test 3: Test with size assertion (for binary/variable outputs) -->
+    <test expect_num_outputs="1">
+        <param name="input_file" value="input3.bam" ftype="bam"/>
+        <output name="output_file" ftype="binary">
+            <assert_contents>
+                <has_size size="1000" delta="100"/>
+            </assert_contents>
+        </output>
+    </test>
+
+    <!-- Test 4: Test with regex matching -->
+    <test expect_num_outputs="1">
+        <param name="input_file" value="input4.fastq"/>
+        <output name="output_file">
+            <assert_contents>
+                <has_line_matching expression="^#\sreads\t\d+$"/>
+                <has_n_lines n="10"/>
+            </assert_contents>
+        </output>
+    </test>
+
+    <!-- Test 5: Test with MD5 checksum -->
+    <test expect_num_outputs="1">
+        <param name="input_file" value="input5.fastq.gz"/>
+        <output name="output_file" ftype="fastq.gz"
+                md5="a1b2c3d4e5f6g7h8i9j0"/>
+    </test>
+</tests>
+```
+
+**Test assertions:**
+- `file="expected.txt"` - Compare with expected file
+- `ftype="format"` - Check output format
+- `md5="checksum"` - Check MD5 hash
+- `<has_text text="..."/>` - Contains text
+- `<has_line line="..."/>` - Contains exact line
+- `<has_line_matching expression="regex"/>` - Matches regex
+- `<has_n_lines n="10"/>` - Has exactly N lines
+- `<has_size size="1000" delta="100"/>` - File size check
+- `expect_num_outputs="N"` - Expect exactly N outputs
+
+**Best practices:**
+- Test most functionality, not necessarily 100% coverage
+- Keep test data small (ideally <1MB per file)
+- Test conditional paths and filters
+- Include at least 2-3 tests per tool
+- Use meaningful test data files
+
+### Help Section
+
+Write help in reStructuredText format:
+
+```xml
+<help><![CDATA[
+What it does
+============
+
+**Tool Name** performs XYZ analysis on sequencing data. It processes input files and produces summary statistics.
+
+This tool is useful for:
+- Use case 1
+- Use case 2
+- Use case 3
+
+.. image:: pipeline.svg
+   :alt: Pipeline diagram
+   :align: left
+
+Input
+=====
+
+The tool accepts:
+
+- **FASTQ files**: Raw sequencing reads (gzipped or uncompressed)
+- **BAM files**: Aligned reads
+
+Parameters
+==========
+
+**Basic options**
+
+- **Parameter 1**: Description of what this parameter does
+- **Parameter 2**: Explanation with example values
+
+**Advanced options**
+
+- **Advanced parameter**: Detailed explanation
+
+Output
+======
+
+The tool generates:
+
+1. **Summary table**: Tab-separated file with columns:
+
+   - Column 1: Description
+   - Column 2: Description
+   - Column 3: Description
+
+2. **Log file** (optional): Detailed processing log
+
+Examples
+========
+
+Example 1: Basic usage
+----------------------
+
+Input: reads.fastq
+Parameter 1: 100
+Output: summary statistics
+
+Example 2: Advanced filtering
+------------------------------
+
+Input: reads.fastq.gz
+Filter: length > 50
+Output: Filtered statistics
+
+References
+==========
+
+For more information, see the `tool homepage <https://example.com>`_.
+]]></help>
+```
+
+**Best practices:**
+- Use reStructuredText formatting
+- Include "What it does", "Input", "Output" sections
+- Add examples when helpful
+- Reference images from `./static/images/` directory
+- Be clear and concise
+- Include links to tool homepage/documentation
+
+### Citations
+
+Always include relevant citations:
+
+```xml
+<citations>
+    <citation type="doi">10.1038/s41592-021-01101-x</citation>
+    <citation type="bibtex">
+        @article{author2020,
+            title={Tool Title},
+            author={Author, A. and Author, B.},
+            journal={Journal Name},
+            year={2020},
+            volume={10},
+            pages={123-145}
+        }
+    </citation>
+</citations>
+```
+
+**Best practices:**
+- Prefer DOI format over BibTeX
+- Include primary tool citation
+- Include algorithm citations if relevant
+
+## Formatting and Style
+
+### Indentation
+- Use 4 spaces for indentation
+- Keep XML properly indented and readable
+
+### CDATA Sections
+Use CDATA for sections containing special characters:
+```xml
+<command><![CDATA[ ... ]]></command>
+<help><![CDATA[ ... ]]></help>
+<version_command><![CDATA[ ... ]]></version_command>
+```
+
+### Special Characters in Parameters
+
+When using comparison operators in select parameters:
+
+```xml
+<param name="comparison" type="select">
+    <option value="&lt;">less than</option>
+    <option value="=">equal to</option>
+    <option value="&gt;">greater than</option>
+    <sanitizer sanitize="false"/>
+</param>
+```
+
+Use XML entities: `&lt;` for `<`, `&gt;` for `>`, `&amp;` for `&`
+
+## Testing Tools
+
+### Local Testing with Planemo
+
+```bash
+# Install planemo
+pip install planemo
+
+# Lint the tool
+planemo lint tool.xml
+
+# Test the tool
+planemo test --install_galaxy tool.xml
+
+# Serve the tool locally
+planemo serve tool.xml
+```
+
+### Linting Requirements
+
+All tools must pass:
+- `planemo lint` with no errors or warnings
+- `planemo test` with all tests passing
+- Python code must pass `flake8` linting
+- R code must pass `lintr` linting
+
+## Common Patterns and Tips
+
+### Handling Collections
+
+Process dataset collections by accepting collection inputs:
+
+```xml
+<param name="input_collection" type="data_collection"
+       collection_type="list" format="fastq"
+       label="Input collection of FASTQ files"/>
+```
+
+### Reference Data and Tool Data Tables
+
+For built-in reference data:
+
+1. Create `tool-data/tool_data_table_conf.xml.sample`:
+```xml
+<tables>
+    <table name="tool_name_indexes" comment_char="#">
+        <columns>value, dbkey, name, path</columns>
+        <file path="tool-data/tool_name_indexes.loc"/>
+    </table>
+</tables>
+```
+
+2. Create `tool-data/tool_name_indexes.loc.sample`:
+```
+# value    dbkey    name    path
+hg38    hg38    Human (hg38)    /path/to/hg38/index
+```
+
+3. Use in tool XML:
+```xml
+<param name="index" type="select" label="Reference genome">
+    <options from_data_table="tool_name_indexes">
+        <filter type="sort_by" column="2"/>
+        <validator type="no_options" message="No indexes available"/>
+    </options>
+</param>
+```
+
+4. Create test data table `tool-data/tool_data_table_conf.xml.test`
+
+### Using Environment Variables
+
+```xml
+<environment_variables>
+    <environment_variable name="TOOL_VAR">value</environment_variable>
+</environment_variables>
+```
+
+Or use in command:
+```xml
+--threads "\${GALAXY_SLOTS:-4}"
+```
+
+### Configuration Files
+
+For tools requiring configuration files:
+
+```xml
+<configfiles>
+    <configfile name="config_file"><![CDATA[
+[section]
+parameter1 = $param1
+parameter2 = $param2
+#if $conditional.select == "advanced":
+advanced_option = $conditional.advanced_param
+#end if
+]]></configfile>
+</configfiles>
+```
+
+Reference in command:
+```xml
+tool_name --config '$config_file'
+```
+
+## Checklist for Tool Submission
+
+Before submitting a tool to tools-iuc:
+
+### Repository Level
+- [ ] `.shed.yml` present and correctly formatted
+- [ ] Tool name alphanumeric with underscores only (no hyphens)
+- [ ] Owner set to `iuc` (or migration arranged)
+- [ ] Homepage and repository URLs present
+- [ ] No `tool_dependencies.xml` file (deprecated)
+
+### Tool XML
+- [ ] Passes `planemo lint` with no warnings/errors
+- [ ] XML elements in correct order
+- [ ] Uses `@TOOL_VERSION@+galaxy@VERSION_SUFFIX@` versioning
+- [ ] `profile` attribute set appropriately
+- [ ] Description concise and clear
+- [ ] Macros used for tool suites
+- [ ] EDAM topics/operations included (when applicable)
+
+### Requirements
+- [ ] Conda packages available in bioconda/conda-forge
+- [ ] Versions specified correctly with `@TOOL_VERSION@`
+- [ ] No deprecated dependency mechanisms
+
+### Command
+- [ ] Wrapped in `<![CDATA[ ... ]]>`
+- [ ] `detect_errors` attribute present OR `<stdio>` element present OR profile >= 16.04
+- [ ] Parameters properly quoted with single quotes
+- [ ] Optional parameters checked before use
+- [ ] Commands joined with `&&`
+- [ ] Proper error handling
+
+### Inputs
+- [ ] Data parameters have correct `format` attributes
+- [ ] Parameter attributes in recommended order
+- [ ] `argument` attributes use long-form CLI flags
+- [ ] Boolean parameters use appropriate `truevalue`/`falsevalue`
+- [ ] Conditionals use `select` not `boolean`
+- [ ] Advanced options grouped in sections
+
+### Outputs
+- [ ] Proper format specifications
+- [ ] Filters for conditional outputs
+- [ ] Meaningful label using `${tool.name}` and `${on_string}`
+
+### Tests
+- [ ] At least 2-3 comprehensive tests
+- [ ] Tests cover main functionality
+- [ ] Test data in `test-data/` directory
+- [ ] Test files small (<1MB preferred)
+- [ ] `expect_num_outputs` specified
+- [ ] Tests pass with `planemo test`
+- [ ] Output filtering tested with filters
+
+### Help
+- [ ] Wrapped in `<![CDATA[ ... ]]>`
+- [ ] Written in valid reStructuredText
+- [ ] Includes "What it does" section
+- [ ] Describes inputs and outputs
+- [ ] Images in `./static/images/` if used
+
+### Citations
+- [ ] Primary tool citation included
+- [ ] DOI format preferred over BibTeX
+
+### Best Practices
+- [ ] 4-space indentation throughout
+- [ ] Code is readable and well-organized
+- [ ] Follows IUC Best Practices
+- [ ] Tool appropriate for IUC repository
+- [ ] OSI-approved license
+
+## Advanced Topics
+
+### Parallelism
+
+Enable parallel processing:
+
+```xml
+<parallelism method="multi" split_inputs="input_file" split_mode="to_size"
+             split_size="100" merge_outputs="output_file"/>
+```
+
+### Dynamic Option Sources
+
+Create options from dataset columns:
+
+```xml
+<param name="column_select" type="select" label="Select column">
+    <options>
+        <filter type="data_meta" ref="input_file" key="columns"/>
+    </options>
+</param>
+```
+
+### Discovering Datasets
+
+For tools producing multiple unknown output files:
+
+```xml
+<outputs>
+    <collection name="output_collection" type="list" label="Output files">
+        <discover_datasets pattern="__name__" directory="outputs" format="txt"/>
+    </collection>
+</outputs>
+```
+
+## Resources
+
+- **IUC Best Practices**: https://galaxy-iuc-standards.readthedocs.io/
+- **Galaxy Tool Development**: https://docs.galaxyproject.org/en/latest/dev/schema.html
+- **Planemo Documentation**: https://planemo.readthedocs.io/
+- **Galaxy Training**: https://training.galaxyproject.org/
+- **Tool Shed**: https://toolshed.g2.bx.psu.edu/
+- **IUC GitHub**: https://github.com/galaxyproject/tools-iuc
+- **Galaxy Gitter**: https://gitter.im/galaxy-iuc/iuc
+
+## Common Issues and Solutions
+
+### Issue: Tests fail with "File not found"
+**Solution**: Ensure test data files are in `test-data/` directory and referenced correctly
+
+### Issue: Optional parameter showing empty value
+**Solution**: Check with `#if str($param) != "":` before using
+
+### Issue: Boolean parameter not working
+**Solution**: Ensure `truevalue` is the CLI flag and `falsevalue` is empty or opposite
+
+### Issue: Conditional not showing correct parameters
+**Solution**: Ensure `<when>` values match `<option>` values exactly
+
+### Issue: Output not appearing
+**Solution**: Check filter conditions and ensure output is produced by command
+
+### Issue: Tool not finding executable
+**Solution**: Verify conda package name and version in requirements
+
+### Issue: Test comparing binary files fails
+**Solution**: Use `<has_size>` assertion instead of file comparison
+
+### Issue: Collection not processing multiple files
+**Solution**: Ensure tool properly handles dataset collections in inputs
+
+## Workflow for Creating a New Tool
+
+1. **Research**: Find the tool's conda package, documentation, and examples
+2. **Initialize**: Create directory structure with `.shed.yml` and `tool.xml`
+3. **Basic wrapper**: Write minimal XML with basic inputs/outputs
+4. **Test locally**: Use `planemo test` to verify basic functionality
+5. **Add features**: Incrementally add parameters, conditionals, and options
+6. **Create tests**: Write comprehensive tests with small test data
+7. **Documentation**: Write clear help section with examples
+8. **Lint**: Run `planemo lint` and fix all issues
+9. **Review**: Check against IUC checklist
+10. **Submit**: Open pull request to tools-iuc repository
+
+## Tips for Success
+
+- Start simple and iterate
+- Use existing similar tools as templates
+- Test frequently during development
+- Keep test data small
+- Write clear, helpful documentation
+- Follow the style guide consistently
+- Ask for help on Gitter when stuck
+- Review other tools for patterns
+- Use macros for tool suites to reduce duplication
+- Think about user experience when designing parameters

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(for skill in $CLAUDE_METADATA/.claude/skills/*/SKILL.md $CLAUDE_METADATA/skills/*/SKILL.md $CLAUDE_METADATA/skills/*/skill.md)",
+      "Bash(do if [ -f \"$skill\" ])"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
