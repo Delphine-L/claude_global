@@ -240,3 +240,196 @@ Maintain both detailed technical docs and quick start guides:
    - Next steps
 
 **User benefit**: Technical users get details, casual users get quick wins.
+
+## Galaxy API Data Enrichment
+
+### Enriching Invocations with Inputs and History Names
+
+When analyzing Galaxy workflow executions, basic invocation data lacks workflow inputs and history context needed for linking with external datasets (e.g., genome characteristics).
+
+**Problem**: Default `/api/invocations` endpoint returns minimal data:
+- Invocation ID, workflow ID, history ID, state, timestamps
+- **Missing**: workflow inputs, history names, input dataset details
+
+**Solution**: Use BioBlend to fetch full invocation and history details
+
+```python
+from bioblend.galaxy import GalaxyInstance
+
+def enrich_invocations_with_inputs_and_history(invocations, gi, skip_existing=True):
+    """
+    Enrich invocations with workflow inputs and history names.
+
+    Returns invocations with added fields:
+    - inputs: Dictionary of workflow input datasets
+    - history_name: Name of Galaxy history (often contains identifiers)
+    """
+    enriched = []
+
+    for inv in invocations:
+        # Skip if already enriched
+        if skip_existing and 'inputs' in inv and 'history_name' in inv:
+            enriched.append(inv)
+            continue
+
+        # Get full invocation details (includes inputs)
+        full_invocation = gi.invocations.show_invocation(inv['id'])
+        inv['inputs'] = full_invocation.get('inputs', {})
+
+        # Get history name
+        history_details = gi.histories.show_history(inv['history_id'])
+        inv['history_name'] = history_details.get('name', '')
+
+        enriched.append(inv)
+        time.sleep(0.2)  # Rate limiting
+
+    return enriched
+```
+
+### Extracting Identifiers from History Names
+
+**Use case**: VGP (Vertebrate Genomes Project) uses Species IDs (ToLIDs) in history names
+
+**Pattern**: VGP ToLIDs follow format `[a-z][A-Z][a-z]{2}[A-Z][a-z]{2,3}\d+`
+- Examples: aGasCar1 (amphibian), bAcrTri1 (bird), fHopMal1 (fish), mBalRic1 (mammal)
+
+```python
+import re
+
+def extract_species_id(invocation):
+    """Extract VGP Species ID from history name or inputs."""
+
+    tolid_pattern = r'\b([a-z][A-Z][a-z]{2}[A-Z][a-z]{2,3}\d+)\b'
+
+    # Check history name first
+    history_name = invocation.get('history_name', '')
+    if history_name:
+        match = re.search(tolid_pattern, history_name)
+        if match:
+            return match.group(1)
+
+    # Fallback to inputs
+    inputs = invocation.get('inputs', {})
+    if inputs:
+        match = re.search(tolid_pattern, str(inputs))
+        if match:
+            return match.group(1)
+
+    return None
+```
+
+### Linking with External Data
+
+Once identifiers are extracted, link with external datasets:
+
+```python
+import pandas as pd
+
+# Load external data (e.g., genome characteristics)
+genome_data = pd.read_csv('genome_metadata.tsv', sep='\t')
+
+# Enrich invocations
+for inv in invocations:
+    species_id = extract_species_id(inv)
+    if species_id:
+        inv['species_id'] = species_id
+
+        # Link with genome data
+        genome_row = genome_data[genome_data['ToLID'] == species_id]
+        if not genome_row.empty:
+            inv['genome_size'] = genome_row['Genome size'].values[0]
+            inv['heterozygosity'] = genome_row['Heterozygosity'].values[0]
+
+# Now analyze: correlate resource usage with genome characteristics
+```
+
+**Performance**:
+- ~0.2s per invocation (2 API calls: show_invocation + show_history)
+- For 2,330 invocations: ~8-12 minutes
+- ~4,660 API calls total
+
+**Benefits**:
+- Links computational resource usage with biological characteristics
+- Enables analysis: "Do larger genomes require more memory?"
+- Tracks which species were processed by which workflows
+
+## Complete Data Fetching Pipelines
+
+### Multi-Step Pipeline with Automatic Pagination
+
+For complex data fetching from APIs (e.g., Galaxy, GitHub), structure as incremental pipeline:
+
+**Pattern**:
+```
+Step 1: Fetch base data (auto-paginated)
+   ↓
+Step 2: Filter to relevant subset
+   ↓
+Step 2.5: Enrich filtered data with additional API calls
+   ↓
+Step 3: Fetch detailed metrics
+   ↓
+Step 4: Fetch granular details (parallelized)
+```
+
+**Why incremental**:
+- Resume capability at each step
+- Save filtered data before expensive API calls
+- Easier debugging (inspect intermediate outputs)
+- Better progress tracking
+
+**Implementation**:
+
+```python
+# Step 1: Auto-paginated fetch
+def fetch_with_pagination(user_id, limit=100, skip_existing=True):
+    offset = 0
+    all_data = []
+
+    while True:
+        # Fetch page
+        data = api_fetch(offset=offset, limit=limit)
+
+        # Stop if empty
+        if len(data) == 0:
+            break
+
+        all_data.extend(data)
+
+        # Stop if less than limit (reached end)
+        if len(data) < limit:
+            break
+
+        offset += limit
+
+    return all_data
+
+# Step 2: Filter
+filtered = [item for item in all_data if is_relevant(item)]
+
+# Step 2.5: Enrich (only filtered items)
+enriched = enrich_with_additional_data(filtered)
+
+# Step 3: Detailed fetch (only enriched items)
+with_details = fetch_details(enriched)
+```
+
+**Resume pattern**:
+```python
+# Each step saves to dated file
+step1_file = f'base_data_{date}.json'
+step2_file = f'filtered_data_{date}.json'
+step25_file = f'enriched_data_{date}.json'
+
+# Can restart from any step by loading intermediate file
+if os.path.exists(step25_file):
+    with open(step25_file) as f:
+        enriched = json.load(f)
+    # Skip to step 3
+```
+
+**Benefits**:
+- Reduced API calls (only enrich what you need)
+- Resume from failures without re-fetching everything
+- Clear progress tracking
+- Easier to add new enrichment steps

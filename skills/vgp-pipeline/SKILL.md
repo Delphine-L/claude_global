@@ -199,6 +199,81 @@ When analyzing VGP workflow metrics, filter for official workflows only:
 
 **Impact**: Filtering typically removes ~20-25% of data, leaving ~80% official workflow executions for accurate analysis.
 
+## Species ID (ToLID) Patterns
+
+### VGP ToLID Format
+
+VGP uses Tree of Life IDs (ToLIDs) to uniquely identify species:
+
+**Pattern**: `[clade][Genus][Species][Version]`
+
+**Regex**: `[a-z][A-Z][a-z]{2}[A-Z][a-z]{2,3}\d+`
+
+**Components**:
+- `[a-z]` - Clade prefix (lowercase)
+  - `a` = Amphibian
+  - `b` = Bird
+  - `f` = Fish
+  - `m` = Mammal
+  - `i` = Invertebrate
+  - `r` = Reptile
+- `[A-Z][a-z]{2}` - Genus (3 letters, capitalized first)
+- `[A-Z][a-z]{2,3}` - Species (2-3 letters, capitalized first)
+- `\d+` - Version number
+
+**Examples**:
+- `aGasCar1` - Gastrophryne carolinensis (Eastern narrowmouth toad)
+- `bAcrTri1` - Acridotheres tristis (Common myna)
+- `fHopMal1` - Hoplias malabaricus (Trahira)
+- `mBalRic1` - Balaenoptera ricei (Rice's whale)
+
+### ToLID Locations in Galaxy
+
+When analyzing VGP workflows in Galaxy, ToLIDs appear in:
+
+1. **History names** (most common) - e.g., "aGasCar1 - HiFi Assembly"
+2. **Workflow inputs** - Input dataset names or labels
+3. **Dataset names** - Input files named with ToLID prefix
+
+### Extracting ToLIDs for Resource Analysis
+
+To link workflow resource usage with genome metadata:
+
+```python
+import re
+
+tolid_pattern = r'\b([a-z][A-Z][a-z]{2}[A-Z][a-z]{2,3}\d+)\b'
+
+# From Galaxy history name
+history_name = "aGasCar1 - VGP Assembly HiFi-HiC"
+match = re.search(tolid_pattern, history_name)
+species_id = match.group(1)  # "aGasCar1"
+
+# Link with VGP genome metadata
+# Match species_id with ToLID column in genome tables
+```
+
+### Linking ToLIDs with Genome Characteristics
+
+VGP genome metadata tables use ToLID as primary key:
+
+**Common columns**:
+- `ToLID` - Species identifier
+- `Species` - Scientific name
+- `Common name` - Vernacular name
+- `Genome size¹` - Estimated genome size (bp)
+- `Heterozygosity¹` - Heterozygosity percentage
+- `Sequencing depth` - Coverage depth
+- `Repeat content¹` - Repeat percentage
+- `Assembly version` - hap1/hap2 designation
+
+**Usage for resource analysis**:
+```python
+# Correlate memory usage with genome size
+# Correlate runtime with heterozygosity
+# Compare resource efficiency across clades
+```
+
 ## References
 - [VGP Galaxy Workflows](https://github.com/Delphine-L/iwc/tree/VGP)
 - [Vertebrate Genome Project](https://vertebrategenomesproject.org/)

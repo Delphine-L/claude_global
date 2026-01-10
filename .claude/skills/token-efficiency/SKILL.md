@@ -737,6 +737,78 @@ Read: file3.py  # 30K tokens
 
 ---
 
+### 11. Use Task Tool for Exploratory Searches
+
+When exploring a codebase to understand patterns or find information (not needle queries for specific files):
+
+**❌ Inefficient approach (many tool calls, large context)**:
+```python
+# Direct grep through many files
+Grep(pattern="some_pattern", path=".", output_mode="content")
+# Followed by multiple Read calls to understand context
+Read("file1.py")
+Read("file2.py")
+# Followed by more Grep calls for related patterns
+Grep(pattern="related_pattern", path=".", output_mode="content")
+# Results in dozens of tool calls and accumulating context
+```
+
+**✅ Efficient approach (single consolidated response)**:
+```python
+# Use Task tool with Explore subagent
+Task(
+    subagent_type="Explore",
+    description="Research how Galaxy API works",
+    prompt="""Explore the codebase to understand how Galaxy API calls are made.
+    I need to know:
+    - Which files contain API call patterns
+    - How authentication is handled
+    - Common error handling patterns
+    Return a summary with file locations and key patterns."""
+)
+```
+
+**When to use Task/Explore**:
+- "How does X work in this codebase?"
+- "Where are errors from Y handled?"
+- "What is the structure of Z?"
+- Searching for patterns across multiple files
+- Need context from multiple locations
+- Exploring unfamiliar codebases
+
+**When to use direct tools instead**:
+- "Read file at specific path X" → Use `Read`
+- "Find class definition Foo" → Use `Glob("**/foo.py")` or `Grep("class Foo")`
+- "Search for specific string in file X" → Use `Grep(pattern, path="file.py")`
+- You know exactly which file to check
+
+**Token savings**:
+- Task tool: ~5-10K tokens for consolidated response
+- Direct exploration: ~30-50K tokens (many tool calls + context accumulation)
+- **Savings: 70-80%** for exploratory searches
+
+**Example comparison**:
+
+```python
+# ❌ Inefficient: Exploring workflow patterns manually
+Grep("workflow", output_mode="content")  # 15K tokens
+Read("workflow1.py")  # 20K tokens
+Read("workflow2.py")  # 18K tokens
+Grep("error handling", output_mode="content")  # 12K tokens
+# Total: ~65K tokens
+
+# ✅ Efficient: Using Task tool
+Task(
+    subagent_type="Explore",
+    description="Understand workflow error handling",
+    prompt="Explore how workflows handle errors. Return patterns and file locations."
+)
+# Total: ~8K tokens (single consolidated response)
+# Savings: 88%
+```
+
+---
+
 ## Token Savings Examples
 
 ### Example 1: Status Check
