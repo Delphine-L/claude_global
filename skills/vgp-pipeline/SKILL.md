@@ -153,6 +153,52 @@ When creating workflow diagrams:
 
 `[WF6]` = optional, `WF6` = required, `-` = skipped
 
+## Resource Analysis Insights
+
+### VGP Workflow Canonical Names
+
+Official VGP workflows normalized to canonical names for analysis:
+
+| ID | Canonical Name | Description |
+|----|----------------|-------------|
+| VGP0 | Mitogenome Assembly (VGP0) | Mitochondrial genome assembly |
+| VGP1/WF1 | K-mer Profiling (VGP1) | K-mer profiling for genome size estimation (HiFi) |
+| VGP2 | K-mer Profiling Trio (VGP2) | Trio k-mer profiling |
+| VGP3 | HiFi-only Assembly (VGP3) | HiFi-only assembly |
+| VGP4 | HiFi-HiC Phased Assembly (VGP4) | HiFi-HiC phased assembly |
+| VGP5 | HiFi-Trio Phased Assembly (VGP5) | HiFi-Trio phased assembly |
+| VGP6 | Purge Duplicates (VGP6) | Purge duplicate contigs |
+| VGP6b | Purge Duplicates One Haplotype (VGP6b) | Purge duplicates (haploid mode) |
+| VGP7 | BioNano Scaffolding (VGP7) | BioNano optical mapping scaffolding |
+| VGP8 | Hi-C Scaffolding (VGP8) | Hi-C scaffolding |
+| VGP9 | Assembly Decontamination (VGP9) | Assembly decontamination |
+
+**Note**: WF1-9 are aliases for VGP1-9 (same workflows, different naming convention).
+
+### Official vs Non-Official Workflow Identification
+
+When analyzing VGP workflow metrics, filter for official workflows only:
+
+**Official workflows** (include):
+- Core VGP workflows: VGP0-VGP9, WF0-WF9
+- PretextMap/PreCuration workflows
+- Workflows with version info (e.g., "v0.1.8", "release v0.3")
+- Workflows imported from uploaded files or URLs (official sources)
+- "WORKFLOW REPORT TEST" workflows (testing report generation, not execution)
+
+**Non-official workflows** (exclude):
+- Export workflows (utility workflows, e.g., "Export PretextMap Workflow")
+- test1, test2, etc. (debug/retry runs with lowercase test + number)
+- Attempt1, Attempt2, Fix_Attempt (retry/debug runs)
+- "Copy of" workflows (user copies)
+- Numbered prefixes: "1. ", "2. ", "3. " (custom project markers)
+- Custom project annotations (e.g., "Used for other Columbiformes")
+- Typos (e.g., "Gnome Assembly" instead of "Genome")
+- "training workflow" (tutorial workflows)
+- Experimental integrations (e.g., "ONT-INTEGRATED")
+
+**Impact**: Filtering typically removes ~20-25% of data, leaving ~80% official workflow executions for accurate analysis.
+
 ## References
 - [VGP Galaxy Workflows](https://github.com/Delphine-L/iwc/tree/VGP)
 - [Vertebrate Genome Project](https://vertebrategenomesproject.org/)
