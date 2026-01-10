@@ -1,7 +1,7 @@
 ---
 name: vgp-pipeline
 description: Expert knowledge for VGP genome assembly PIPELINE CODEBASE development - orchestrator.py, galaxy_client.py, workflow_manager.py. For modifying the batch execution system, debugging pipeline orchestration, or implementing error handling. NOT for general Galaxy tool/workflow development.
-version: 2.0.0
+version: 2.1.0
 dependencies: galaxy-automation, python>=3.8, pandas, pyyaml
 ---
 
@@ -37,6 +37,32 @@ This skill provides expert knowledge of the **VGP (Vertebrate Genomes Project) p
 - ❌ Working on individual VGP workflows (WF1, WF4, etc.) unless integrating them into the orchestration system
 
 **In other words:** This skill is for the **VGP pipeline automation codebase**, not for general Galaxy automation, VGP workflows themselves, or general Galaxy development. For foundational Galaxy automation patterns, see the `galaxy-automation` skill.
+
+## VGP Assembly Trajectories
+
+The VGP pipeline supports multiple trajectories based on available data:
+
+**Trajectory A (HiFi + Trio):**
+```
+WF2 (trio k-mer profiling) → WF5 (trio assembly) → WF6 (optional) → WF8 → WF9
+```
+
+**Trajectory B (HiFi + Hi-C):** [Most common in current codebase]
+```
+WF1 (k-mer profiling) → WF4 (HiC assembly) → WF6 (optional) → WF8 → WF9
+```
+
+**Trajectory C (HiFi only):**
+```
+WF1 (k-mer profiling) → WF3 (HiFi-only assembly) → WF6 (recommended) → WF8 → WF9
+```
+
+**Additional workflows:**
+- **WF0 (Mitochondrial)**: Runs in parallel after WF4 is launched, independent of main pipeline
+- **WF7 (Bionano)**: Alternative scaffolding method (instead of WF8)
+- **PreCuration**: Final step after WF9 for manual curation using Pretext contact maps
+
+**Current codebase focus:** Trajectory B (WF1 → WF4 → [WF6] → WF8 → WF9 → PreCuration)
 
 ## Project Setup
 
@@ -106,23 +132,90 @@ This will create symlinks to:
 - Metadata synchronization with locks
 - Resume capability with state tracking
 
+## Biological Workflow Purposes
+
+### Scientific Rationale
+
+**WF1 - K-mer Profiling**: Foundation for all downstream workflows
+- Determines genome size from k-mer frequency distribution
+- Estimates heterozygosity (genetic variation between haplotypes)
+- Assesses repeat content and sequencing error rate
+- Provides parameters that guide assembly algorithms
+- Coverage requirements: Minimum 30× PacBio HiFi (diploid)
+
+**WF0 - Mitochondrial Assembly**: Separate organellar genome
+- Mitochondrial genome is circular and present in high copy numbers
+- Assembled separately using MitoHiFi with NCBI reference
+- Can fail if no mitochondrial reads detected (expected failure)
+- Runs independently in parallel with nuclear genome assembly
+
+**WF4 - HiFi-HiC Phased Assembly**: Generate haplotype-resolved diploid assembly
+- Uses hifiasm in HiC-mode to separate maternal/paternal chromosomes
+- Hi-C contact frequency exploits physical proximity on same chromosome
+- Produces TWO assemblies (hap1/hap2), not primary/alternate
+- Critical: QC with Merqury k-mer spectra before proceeding
+- Coverage requirements: Minimum 60× Hi-C (diploid)
+
+**WF6 - Purge Duplicates**: Remove haplotypic duplications (OPTIONAL)
+- Identifies contigs incorrectly placed in wrong haplotype
+- Often unnecessary after HiC-phasing (WF4) due to good haplotype separation
+- Decision: Inspect WF4 k-mer multiplicity profiles first
+- Runs BETWEEN WF4 and WF8 when needed
+- Look for: k-mer peaks at expected coverage (heterozygous ~25×, homozygous ~50×)
+
+**WF8 - Hi-C Scaffolding**: Chromosome-level scaffolding
+- Uses YAHS to exploit Hi-C contact frequency patterns
+- Sequences physically close on chromosomes have more Hi-C contacts
+- Produces chromosome-level scaffolds from contig-level assemblies
+- Must run SEPARATELY for each haplotype (hap1, then hap2)
+- Uses GFA graphs from WF4 (or purged assemblies from WF6)
+
+**WF9 - Decontamination**: Remove foreign contaminants
+- Identifies viral, bacterial, and other exogenous sequences
+- Removes mitochondrial scaffolds (assembled separately in WF0)
+- Uses NCBI taxonomy and BLAST for contamination detection
+- Essential for publication-quality assemblies
+
+**PreCuration - Contact Maps**: Manual curation support
+- Generates Pretext format Hi-C contact maps
+- Includes annotation tracks: PacBio coverage, gaps, telomeres
+- Opens in PretextView for interactive manual curation
+- Allows identification and correction of scaffolding errors
+
 ### Workflow Dependencies
 
+**Main Pipeline Path:**
 ```
 WF1 (kmer profiling)
-  ├─→ WF4 (assembly + phasing)
-  │     ├─→ WF0 (mitochondrial) [launched in background]
-  │     └─→ WF8 (haplotype scaffolding)
+  ├─→ WF4 (assembly + HiC phasing)
+  │     ├─→ WF0 (mitochondrial) [launched in background, runs in parallel]
+  │     ├─→ WF6 (purge duplicates) [OPTIONAL - runs between WF4 and WF8]
+  │     │     └─→ WF8 (Hi-C scaffolding)
+  │     └─→ WF8 (Hi-C scaffolding) [if WF6 skipped]
   │           └─→ WF9 (decontamination)
-  │                 └─→ PreCuration (optional, Pretext maps)
+  │                 └─→ PreCuration (Pretext maps for manual curation)
 ```
+
+**Alternative Workflows:**
+- **WF2**: Trio k-mer profiling (when parental genomes available)
+- **WF3**: HiFi-only assembly (no Hi-C or trio data)
+- **WF5**: Trio phased assembly (requires WF2, uses parental Illumina reads)
+- **WF7**: Bionano optical mapping scaffolding (alternative to WF8)
 
 **Critical Rules:**
 - WF4 requires WF1 **complete**
-- WF0 requires WF4 **launched** (doesn't wait for completion)
-- WF8 requires WF4 **complete**
-- WF9 requires WF8 **complete**
+- WF0 requires WF4 **launched** (doesn't wait for completion, runs in parallel)
+- WF6 is **optional** - only run if WF4 k-mer QC indicates purging needed
+- WF6 runs **between WF4 and WF8** (takes WF4 outputs, produces cleaned assemblies for WF8)
+- WF8 requires WF4 **complete** (or WF6 if run)
+- WF8 input: WF6 purged assemblies (if WF6 run) OR WF4 assemblies (if WF6 skipped)
+- WF8 must run **twice sequentially** - once for hap1, once for hap2
+- WF9 requires WF8 **complete** for that haplotype
 - PreCuration requires WF9 **complete**
+
+**Expected Failures:**
+- WF0 may fail if no mitochondrial reads detected (biological, not technical failure)
+- Check with `check_mitohifi_failure()` before retrying WF0
 
 ### Directory Structure Per Species
 
@@ -133,6 +226,44 @@ WF1 (kmer profiling)
 ├── reports/            # PDF workflow reports
 └── planemo_log/        # Planemo execution logs
 ```
+
+### Workflow Input/Output Mappings
+
+| Workflow | Key Inputs | Key Outputs | Flows To |
+|----------|-----------|-------------|----------|
+| WF1 | HiFi reads, k-mer length, ploidy | Meryl DB, GenomeScope summary/model parameters | WF4, WF6 |
+| WF0 | HiFi reads, species name, genetic code | Mitogenome assembly, GenBank file | (Independent) |
+| WF4 | HiFi reads, Hi-C reads, WF1 outputs | Hap1/hap2 assemblies (fasta), GFA graphs, BUSCO/Merqury reports | WF6 or WF8 |
+| WF6 | WF4 assemblies, HiFi reads, WF1 Meryl DB | Purged hap1/hap2 assemblies | WF8 |
+| WF8 | WF4 GFA graphs (or WF6 purged), Hi-C reads, genome size | Scaffolded assemblies, Pretext maps, BUSCO reports | WF9 |
+| WF9 | WF8 scaffolds, NCBI taxon ID, species name | Decontaminated assembly, contamination reports | PreCuration |
+| PreCuration | WF9 assemblies, Hi-C reads, PacBio reads | Pretext files for manual curation | (Final output) |
+
+### Quality Control Checkpoints
+
+**After WF1 - Before WF4:**
+- Verify GenomeScope2 fitted model (black line) matches observed k-mer distribution
+- Check genome size estimate is reasonable for species
+- Assess heterozygosity level
+- Trust estimates only when model fit is good
+
+**After WF4 - Decision: Run WF6?**
+- Inspect Merqury k-mer spectra-cn plots
+- Expected: heterozygous peak ~25×, homozygous peak ~50× (for 50× total coverage)
+- If peaks align well: Skip WF6, HiC-phasing already separated haplotypes well
+- If peaks are messy or overlapping: Consider running WF6
+- Note: WF6 often unnecessary after good HiC-phasing
+
+**After WF8 - Before WF9:**
+- Check Pretext Hi-C contact maps for scaffolding quality
+- Look for: diagonal signals (good), off-diagonal (potential errors)
+- Verify BUSCO completeness scores
+- Check for obvious mis-joins or contamination
+
+**After WF9 - Before Publication:**
+- Review contamination reports
+- Verify BUSCO scores maintained after decontamination
+- Use PreCuration workflow for manual inspection and correction
 
 ## Key Implementation Patterns
 
@@ -226,6 +357,31 @@ command_lines[key] = (
 - History names follow pattern: `VGP_{workflow_name}_{assembly_id}_{suffix}`
 
 ## Common Development Tasks
+
+### Understanding Workflow Execution Order
+
+When implementing orchestration logic, remember:
+
+1. **WF6 is a decision point**: Check if user wants to run it based on WF4 QC
+2. **WF8 requires special handling**:
+   - Must run twice (hap1, then hap2)
+   - Input source depends on whether WF6 was run
+   - Use different GFA graphs for each haplotype
+3. **WF0 failure handling**:
+   - Expected failures are biological (no mito reads)
+   - Don't retry expected failures
+   - Use `check_mitohifi_failure()` to distinguish
+
+**Code pattern for WF6 decision:**
+```python
+# After WF4 completes
+if args.run_purge_duplicates or user_requests_wf6:
+    # Run WF6, then WF8 uses WF6 outputs
+    wf8_input_source = 'WF6'
+else:
+    # Skip WF6, WF8 uses WF4 outputs directly
+    wf8_input_source = 'WF4'
+```
 
 ### Adding a New Workflow
 
@@ -397,13 +553,17 @@ r'R2'  # Reverse Hi-C reads
 1. **Validate workflow IDs** before using (16-char hex check via `workflow_manager.is_workflow_id()`)
 2. **Handle NaN/NA values** in pandas DataFrames explicitly (VGP metadata uses pandas)
 3. **Check VGP workflow dependencies** before launching (WF1 complete before WF4, etc.)
-4. **Update VGP tracking tables** after each workflow preparation
-5. **Save VGP metadata frequently** (after each successful operation to CSV/JSON)
-6. **Don't modify metadata** on planemo launch failures (no invocation created)
-7. **Use assembly_id consistently** - extract with `utils.get_working_assembly()` to handle suffixes
-8. **Validate GenomeArk URLs** before workflow launch (check with `get_urls.py`)
-9. **Check for expected failures** before retrying (e.g., mitochondrial assembly failures)
-10. **Use unique history names** per species run to avoid conflicts
+4. **WF6 placement**: Only run between WF4 and WF8, never after WF8
+5. **WF8 haplotype ordering**: Run hap1 completely before hap2
+6. **Coverage requirements**: Warn if HiFi <30× or Hi-C <60× (diploid)
+7. **QC checkpoints**: Pause for user review after WF4 before WF6/WF8 decision
+8. **Update VGP tracking tables** after each workflow preparation
+9. **Save VGP metadata frequently** (after each successful operation to CSV/JSON)
+10. **Don't modify metadata** on planemo launch failures (no invocation created)
+11. **Use assembly_id consistently** - extract with `utils.get_working_assembly()` to handle suffixes
+12. **Validate GenomeArk URLs** before workflow launch (check with `get_urls.py`)
+13. **Check for expected failures** before retrying (WF0 mitochondrial failures)
+14. **Use unique history names** per species run to avoid conflicts
 
 ## Common Pitfalls
 
@@ -418,6 +578,8 @@ r'R2'  # Reverse Hi-C reads
 6. **GenomeArk URL changes**: VGP fetches from GenomeArk S3 - URLs may change, always validate before launch
 7. **Expected biological failures**: Don't retry mitochondrial failures marked as expected by `check_mitohifi_failure()`
 8. **Workflow dependency violations**: VGP has strict dependency order - don't launch WF4 before WF1 completes
+9. **WF6 placement errors**: WF6 must run between WF4 and WF8, not before or after
+10. **WF8 input source confusion**: Verify if using WF4 or WF6 outputs based on whether purging was performed
 
 ## Related Skills
 
