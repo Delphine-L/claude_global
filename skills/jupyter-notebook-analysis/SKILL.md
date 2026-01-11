@@ -75,6 +75,60 @@ def normalize_name(name):
 
 **Impact**: Reduces 86 unique workflow names to 12 canonical types for meaningful comparisons.
 
+### Analysis-Specific Data Subsetting
+
+**Use Case**: Different analyses within same notebook need different data requirements
+
+**Pattern**: Create named subsets rather than filtering the main dataset
+
+```python
+# Load complete dataset
+with open('data.json') as f:
+    data = json.load(f)  # Keep original for general analysis
+
+# Create analysis-specific subsets
+data_with_species = [
+    item for item in data
+    if item.get('species_id') and item.get('genome_size')
+]
+
+data_with_timestamps = [
+    item for item in data
+    if item.get('start_time') and item.get('end_time')
+]
+
+# Report dataset composition
+print(f'📊 Dataset Summary:')
+print(f'  • Total items: {len(data)}')
+print(f'  • With species linkage: {len(data_with_species)} ({len(data_with_species)/len(data)*100:.1f}%)')
+print(f'  • With timing data: {len(data_with_timestamps)} ({len(data_with_timestamps)/len(data)*100:.1f}%)')
+print()
+print(f'  ℹ️  Analysis Strategy:')
+print(f'     - General resource analysis: ALL {len(data)} items')
+print(f'     - Genome size correlation: {len(data_with_species)} items with species data')
+print(f'     - Temporal analysis: {len(data_with_timestamps)} items with timestamps')
+```
+
+**Documentation in Notebook**:
+Add clear markdown cells before each analysis section:
+
+```markdown
+**Important Note**:
+- **General resource analyses** use the **complete dataset** of all items
+- **This genome correlation section** uses only the **subset with Species IDs**
+```
+
+**Benefits**:
+- Maximizes data usage (don't discard items for analyses that don't need all fields)
+- Clear documentation of what data each analysis uses
+- Prevents confusion about different result counts
+- Enables transparent reporting of data availability
+
+**Example**: VGP workflow analysis
+- Full dataset (1,630 invocations): Tool-level resource analysis, workflow timing
+- Species subset (740 invocations): Genome size vs memory correlation
+- Both analyses valid and informative
+
 ## Resource Analysis Patterns
 
 ### Tool-Level Resource Over-Allocation Analysis
@@ -218,6 +272,78 @@ print('✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED')
 - Fast execution
 - Easy to share and run independently
 - Can validate logic before modifying notebook
+
+### Diagnosing Wrong File Loads
+
+**Symptom**: Expected data fields missing (e.g., "no metrics found", "no species IDs found")
+
+**Root Cause**: Often loading wrong file with similar name but different contents
+
+**Diagnostic Pattern**:
+```python
+import json
+
+# Compare what's in each file
+files_to_check = [
+    'enriched_data.json',
+    'metrics_data.json',
+    'merged_data.json'
+]
+
+for filepath in files_to_check:
+    try:
+        with open(filepath) as f:
+            data = json.load(f)
+
+        print(f'\n📄 {filepath}')
+        print(f'   Items: {len(data)}')
+
+        if data:
+            sample = data[0]
+            print(f'   Keys: {list(sample.keys())[:10]}...')  # First 10 keys
+
+            # Check for critical fields
+            has_species = sum(1 for item in data if item.get('species_id'))
+            has_metrics = sum(1 for item in data if item.get('metrics'))
+
+            print(f'   With species_id: {has_species} ({has_species/len(data)*100:.1f}%)')
+            print(f'   With metrics: {has_metrics} ({has_metrics/len(data)*100:.1f}%)')
+    except FileNotFoundError:
+        print(f'\n📄 {filepath} - NOT FOUND')
+    except Exception as e:
+        print(f'\n📄 {filepath} - ERROR: {e}')
+```
+
+**Common Issues**:
+
+1. **Loading enrichment file instead of merged file**
+   - Has species_id ✓
+   - Has metrics ✗
+   - **Fix**: Change to merged file
+
+2. **Loading metrics file instead of merged file**
+   - Has species_id ✗
+   - Has metrics ✓
+   - **Fix**: Change to merged file or run merge step
+
+3. **Loading old file after pipeline update**
+   - Missing new fields
+   - **Fix**: Re-run pipeline to regenerate file
+
+**Preventive Measures**:
+- Add file validation in load cell:
+  ```python
+  with open('data.json') as f:
+      data = json.load(f)
+
+  # Validate expected fields
+  if not data:
+      print('⚠️ ERROR: File is empty!')
+  else:
+      with_metrics = sum(1 for item in data if item.get('metrics'))
+      if with_metrics == 0:
+          print(f'⚠️ WARNING: No metrics found! Are you loading the right file?')
+  ```
 
 ## Documentation Patterns
 
@@ -433,3 +559,113 @@ if os.path.exists(step25_file):
 - Resume from failures without re-fetching everything
 - Clear progress tracking
 - Easier to add new enrichment steps
+
+### Independent Step Execution Pattern
+
+**Problem**: Users want to re-run enrichment steps (e.g., with different regex patterns) without re-running expensive fetch steps.
+
+**Solution**: Add configuration cell that allows loading from existing file OR using pipeline variable
+
+**Implementation**:
+```python
+# Configuration cell (place before enrichment step)
+LOAD_FROM_FILE = False  # Set to True to load from existing file
+DATA_FILE = f'filtered_data_{date_string}.json'
+
+# Execution cell
+if LOAD_FROM_FILE:
+    print(f'📂 Loading data from file: {DATA_FILE}')
+    with open(DATA_FILE, 'r') as f:
+        data_to_process = json.load(f)
+    print(f'   • Loaded: {len(data_to_process)} items')
+else:
+    try:
+        data_to_process = filtered_data  # From previous step
+        print(f'📋 Using data from previous step: {len(data_to_process)} items')
+    except NameError:
+        print('⚠️ ERROR: "filtered_data" variable not found.')
+        print('   Set LOAD_FROM_FILE = True to load from file instead.')
+        data_to_process = []
+
+# Enrichment step uses data_to_process regardless of source
+enriched = enrich_function(data_to_process)
+```
+
+**User Benefits**:
+1. **Time savings**: Skip 15-30 min of fetch/filter steps
+2. **Flexibility**: Re-run enrichment with different settings
+3. **Testing**: Test extraction patterns without full pipeline
+4. **Debugging**: Easier to diagnose enrichment issues
+
+**Documentation Requirements**:
+- Add "Running Step X Independently" section to README
+- Include quick start guide for independent execution
+- Add troubleshooting entry for "variable not found" error
+- Update pipeline diagram to show optional entry points
+
+**Backward Compatibility**:
+- Default: `LOAD_FROM_FILE = False` (uses pipeline variable)
+- Existing workflows unchanged
+- No breaking changes to cell execution order
+
+## Multi-Source Data Merging
+
+### Problem: Complementary Data in Separate Files
+
+When data pipelines produce separate outputs with complementary information:
+- **Enrichment file**: Has identifiers/metadata but no metrics
+- **Metrics file**: Has metrics but no identifiers/metadata
+
+**Example**: Galaxy workflow analysis
+- `enriched_data.json`: Species IDs, history names, inputs (no resource metrics)
+- `metrics_data.json`: Memory, CPU, runtime metrics (no species linkage)
+
+### Solution: ID-Based Dictionary Merge
+
+**Pattern**:
+```python
+# Load both data sources
+with open('enriched_data.json') as f:
+    enriched = json.load(f)
+with open('metrics_data.json') as f:
+    metrics = json.load(f)
+
+# Create lookup dictionary from enrichment data
+enriched_dict = {item['id']: item for item in enriched}
+
+# Merge: Add enrichment fields to metrics data
+merged = []
+for metric_item in metrics:
+    item_id = metric_item['id']
+    if item_id in enriched_dict:
+        enriched_item = enriched_dict[item_id]
+        # Add enrichment fields
+        metric_item['species_id'] = enriched_item.get('species_id')
+        metric_item['history_name'] = enriched_item.get('history_name')
+        metric_item['inputs'] = enriched_item.get('inputs', {})
+        merged.append(metric_item)
+
+# Save merged result
+with open('merged_data.json', 'w') as f:
+    json.dump(merged, f, indent=2)
+
+print(f'Merged {len(merged)} items')
+print(f'With identifier: {sum(1 for item in merged if item.get("species_id"))}')
+```
+
+**Key Principles**:
+1. **Choose primary dataset**: Use the one with most critical data (usually metrics) as base
+2. **Lookup pattern**: Create dictionary from secondary dataset for O(1) lookups
+3. **Preserve all primary data**: Don't filter out items without enrichment
+4. **Track merge statistics**: Report how many items matched, have identifiers, etc.
+
+**Integration with Pipeline**:
+- Add merge step AFTER both data sources are complete
+- Make merge step fast (<1 min) since it's local processing only
+- Include in pipeline documentation with clear data flow diagram
+
+**Benefits**:
+- Automated merging (no manual file manipulation)
+- Consistent results (same merge logic every time)
+- Resume-friendly (can re-merge without re-fetching)
+- Clear statistics for verification

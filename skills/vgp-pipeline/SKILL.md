@@ -274,6 +274,70 @@ VGP genome metadata tables use ToLID as primary key:
 # Compare resource efficiency across clades
 ```
 
+### Merging Species IDs with Metrics Data
+
+**Challenge**: Galaxy API data comes from separate endpoints:
+- `/api/invocations/{id}` + `/api/histories/{history_id}` → Species IDs, history names, inputs
+- `/api/invocations/{id}/metrics` + `/api/jobs/{id}/metrics` → Resource usage metrics
+
+**Result**: Two complementary files:
+1. **Enriched file**: Has species_id, history_name, inputs (NO metrics)
+2. **Metrics file**: Has memory, CPU, runtime (NO species_id)
+
+**Solution Pattern**:
+```python
+# Load both data sources
+with open('vgp_assembly_enriched_YYYYMMDD.json') as f:
+    enriched_data = json.load(f)
+
+with open('vgp_workflows_assembly_runs_metrics.json') as f:
+    metrics_data = json.load(f)
+
+# Create lookup dictionary keyed by invocation ID
+enriched_dict = {inv['id']: inv for inv in enriched_data}
+
+# Merge: Add species data to metrics
+merged_data = []
+for inv in metrics_data:
+    inv_id = inv['id']
+    if inv_id in enriched_dict:
+        enriched_inv = enriched_dict[inv_id]
+        inv['species_id'] = enriched_inv.get('species_id')
+        inv['history_name'] = enriched_inv.get('history_name')
+        inv['inputs'] = enriched_inv.get('inputs', {})
+        merged_data.append(inv)
+
+# Save complete dataset
+with open('vgp_workflows_assembly_runs_metrics_enriched_YYYYMMDD.json', 'w') as f:
+    json.dump(merged_data, f, indent=2)
+
+# Report statistics
+total = len(merged_data)
+with_species = sum(1 for inv in merged_data if inv.get('species_id'))
+unique_species = len(set(inv['species_id'] for inv in merged_data if inv.get('species_id')))
+
+print(f'Total invocations: {total}')
+print(f'With species_id: {with_species} ({with_species/total*100:.1f}%)')
+print(f'Unique species: {unique_species}')
+```
+
+**Expected Results** (VGP assembly workflows):
+- ~1,630 invocations total
+- ~45% with species_id (not all histories follow naming convention)
+- ~129 unique species
+
+**Pipeline Integration**:
+- Add as Step 2.6 in fetch notebook
+- Run AFTER both enrichment (Step 2.5) AND metrics (Step 4)
+- Output file used by resource analysis notebook
+- Fast execution (<1 min, no API calls)
+
+**Enables Analysis**:
+- Memory usage vs genome size
+- Runtime vs heterozygosity
+- Resource efficiency by species/clade
+- Workflow performance across genome characteristics
+
 ## References
 - [VGP Galaxy Workflows](https://github.com/Delphine-L/iwc/tree/VGP)
 - [Vertebrate Genome Project](https://vertebrategenomesproject.org/)
