@@ -338,6 +338,259 @@ print(f'Unique species: {unique_species}')
 - Resource efficiency by species/clade
 - Workflow performance across genome characteristics
 
+## Data Analysis Troubleshooting
+
+### Metric Availability Issues
+
+When analyzing VGP workflow resource usage, be aware of metric availability:
+
+**Memory Metrics**:
+- `memory.max_usage_in_bytes` / `memory.limit_in_bytes` - **Only ~7% of invocations**
+  - These are cgroup-based metrics from Docker/container systems
+  - Only available for newer workflow runs or specific Galaxy configurations
+  - Most reliable for actual memory usage data
+
+- `galaxy_memory_mb` - **~98% of invocations**
+  - Represents memory allocation/request, not actual usage
+  - Much better coverage for correlation analyses
+  - Use when cgroup metrics unavailable
+
+**Runtime Metrics**:
+- `runtime_seconds` - Available for most invocations
+- Use sum of (cores × runtime) for "True CPU Hours" to reflect actual computational resources
+
+**Common Data Issues**:
+
+1. **Enrichment appears empty**: If genome characteristics show 0 species after enrichment:
+   - Check if enrichment cell has been run (data only enriched in memory during notebook execution)
+   - Verify species ToLIDs match between workflow data and genome metadata TSV
+   - Check if genome metadata fields are populated (species may be in TSV with empty values)
+
+2. **Limited correlation data**: When combining metrics with genome characteristics:
+   - Species with rare metrics (like cgroup memory) may not overlap with species having genome data
+   - Check actual overlap: how many species have BOTH the metric AND genome characteristics
+   - Consider using more widely available metrics (galaxy_memory_mb, runtime_seconds)
+
+3. **Debugging data availability**:
+   ```python
+   # Check metric availability
+   species_with_metric = set()
+   for inv in data_with_species:
+       metrics = inv.get('metrics', [])
+       for metric in metrics:
+           if metric.get('name') == 'target_metric_name':
+               if metric.get('raw_value'):
+                   species_with_metric.add(inv.get('species_id'))
+
+   # Check genome data availability
+   species_with_genome = set()
+   for inv in data_with_species:
+       if inv.get('genome_size'):  # or other characteristic
+           species_with_genome.add(inv.get('species_id'))
+
+   # Find overlap
+   overlap = species_with_metric.intersection(species_with_genome)
+   print(f"Species with both: {len(overlap)}")
+   ```
+
+## GenomeArk S3 Data Integration
+
+### Fetching GenomeScope2 Summaries
+
+GenomeScope2 summary files contain genome characteristics needed for workflow analysis.
+
+**S3 Path Pattern**:
+```
+s3://genomeark/species/{Genus}_{species}/{ToLID}/assembly_vgp_HiC_2.0/evaluation/genomescope/{ToLID}_genomescope__Summary.txt
+```
+
+**Fetch Example**:
+```python
+import subprocess
+import re
+
+def fetch_genomescope_summary(species_name, tolid):
+    """Fetch genomescope summary from GenomeArk S3."""
+    species_name_s3 = species_name.replace(' ', '_')
+    path = f"s3://genomeark/species/{species_name_s3}/{tolid}/assembly_vgp_HiC_2.0/evaluation/genomescope/{tolid}_genomescope__Summary.txt"
+
+    result = subprocess.run(
+        ['aws', 's3', 'cp', path, '-', '--no-sign-request'],
+        capture_output=True,
+        text=True,
+        timeout=10
+    )
+
+    return result.stdout if result.returncode == 0 else None
+
+def parse_genomescope_summary(content):
+    """Extract genome characteristics from summary."""
+    data = {}
+
+    # Genome Haploid Length (use max value - second column)
+    match = re.search(r'Genome Haploid Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
+    if match:
+        data['genome_size'] = match.group(1).replace(',', '')
+
+    # Heterozygosity percentage (max value)
+    match = re.search(r'Heterozygous \(ab\)\s+[\d.]+%\s+([\d.]+)%', content)
+    if match:
+        data['heterozygosity'] = match.group(1)
+
+    # Calculate repeat content from repeat and unique lengths
+    repeat_match = re.search(r'Genome Repeat Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
+    unique_match = re.search(r'Genome Unique Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
+
+    if repeat_match and unique_match:
+        repeat_length = float(repeat_match.group(1).replace(',', ''))
+        unique_length = float(unique_match.group(1).replace(',', ''))
+        total_length = repeat_length + unique_length
+        if total_length > 0:
+            repeat_percent = (repeat_length / total_length) * 100
+            data['repeat_content'] = f"{repeat_percent:.1f}"
+
+    return data if data else None
+```
+
+**Key Points**:
+- Use `--no-sign-request` for public bucket access
+- GenomeScope2 format has min/max columns - use max (second) values
+- Species names use underscores in S3 paths
+- Not all species have GenomeScope data available
+- Add timeout protection for batch processing
+
+**Workflow Integration**:
+```python
+# Enrich workflow invocations with genome characteristics
+for inv in workflow_invocations:
+    species_id = inv.get('species_id')
+    if species_id:
+        content = fetch_genomescope_summary(species_name, species_id)
+        if content:
+            genome_data = parse_genomescope_summary(content)
+            inv.update(genome_data)
+```
+
+**Success Rate**: Expect ~80-90% success rate for VGP species in GenomeArk.
+
+## Tool-Level Resource Optimization
+
+### Identifying Top Resource Offender Tools
+
+To prioritize optimization efforts, identify tools consuming most resources:
+
+```python
+# From df_jobs DataFrame (job-level metrics)
+tool_cpu = df_jobs.groupby('tool_name').agg({
+    'cpu_hours': ['sum', 'count', 'mean']
+}).reset_index()
+tool_cpu.columns = ['tool_name', 'total_cpu_hours', 'job_count', 'avg_cpu_hours']
+
+top_cpu_tools = tool_cpu.sort_values('total_cpu_hours', ascending=False).head(3)
+
+tool_memory = df_jobs.groupby('tool_name').agg({
+    'peak_memory_gb': ['sum', 'count', 'mean', 'max']
+}).reset_index()
+top_memory_tools = tool_memory.sort_values('total_memory_gb', ascending=False).head(3)
+```
+
+### Correlating Tool Usage with Genome Characteristics
+
+For each top tool, analyze how genome characteristics affect resource usage:
+
+```python
+from scipy import stats
+
+for tool_name in top_cpu_tools['tool_name']:
+    tool_jobs = df_jobs[df_jobs['tool_name'] == tool_name]
+
+    # Aggregate by species
+    species_data = {}
+    for _, job in tool_jobs.iterrows():
+        workflow_id = job['workflow_id']
+        # Match with workflow invocation to get genome characteristics
+        for inv in invocations:
+            if inv['id'] == workflow_id and inv.get('species_id'):
+                species_id = inv['species_id']
+                genome_size = inv.get('genome_size')
+                cpu_hours = job['cpu_hours']
+
+                if species_id not in species_data:
+                    species_data[species_id] = {
+                        'genome_size': genome_size,
+                        'cpu_hours': 0
+                    }
+                species_data[species_id]['cpu_hours'] += cpu_hours
+
+    # Calculate correlation
+    x = [d['genome_size'] for d in species_data.values()]
+    y = [d['cpu_hours'] for d in species_data.values()]
+
+    if len(x) >= 3:
+        corr, pval = stats.pearsonr(x, y)
+        sig = '***' if pval < 0.001 else '**' if pval < 0.01 else '*' if pval < 0.05 else 'ns'
+        print(f'{tool_name}: r={corr:.3f}, p={pval:.2e} ({sig})')
+```
+
+### Interpretation
+
+**High correlation + high p-value significance** → Tool resource usage scales with genome characteristic
+- **Actionable**: Optimize tool for this characteristic
+- **Example**: Tool uses 2x CPU per 1 Gb genome size increase
+
+**Low/no correlation** → Resource usage independent of genome characteristics
+- **Actionable**: Look for algorithmic inefficiencies
+- **Example**: Tool has fixed overhead or inefficient implementation
+
+**Significance levels**:
+- *** (p < 0.001): Highly significant correlation
+- ** (p < 0.01): Very significant
+- * (p < 0.05): Significant
+- ns: Not significant
+
+### Visualization
+
+Create separate plot for each tool showing all 5 genome characteristics:
+- Genome Size, Heterozygosity, Repeat Content, Contig N50, GC Content
+- Include trend line, correlation coefficient, and p-value on each subplot
+- Point size proportional to number of jobs
+
+## Communication Patterns
+
+### File Path Confirmation
+
+When modifying files, especially when multiple similar files exist:
+
+1. **Always state the FULL path** when making edits:
+   ```
+   ❌ Bad: "Updating the notebook..."
+   ✅ Good: "Updating /Users/delphine/Workdir/Stats_workflow_run/vgp_workflow_resource_analysis.ipynb"
+   ```
+
+2. **Ask for clarification** if multiple candidates exist:
+   ```
+   Found two notebooks:
+   1. /Users/delphine/Workdir/Stats_workflow_run/vgp_workflow_resource_analysis.ipynb
+   2. /Users/delphine/Workdir/Stats_workflow_run/sharing/vgp_workflow_resource_analysis.ipynb
+
+   Which one are you running?
+   ```
+
+3. **After user correction**, explicitly confirm:
+   ```
+   ✅ Confirmed: Now modifying the correct file at /path/to/correct/file
+   ```
+
+### User Feedback Interpretation
+
+When user says "the outlier is still there":
+1. **Don't assume code is wrong** - may be running different file
+2. **Don't assume user error** - may be our mistake
+3. **Verify the file path** immediately
+4. **Check if changes were applied** to the file user is actually running
+
+This pattern prevents major errors where edits are applied to the wrong file for multiple iterations.
+
 ## References
 - [VGP Galaxy Workflows](https://github.com/Delphine-L/iwc/tree/VGP)
 - [Vertebrate Genome Project](https://vertebrategenomesproject.org/)

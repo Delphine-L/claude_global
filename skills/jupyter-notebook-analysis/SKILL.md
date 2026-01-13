@@ -1,671 +1,377 @@
 ---
 name: jupyter-notebook-analysis
-description: Patterns for analyzing, improving, and documenting Jupyter notebooks for scientific data analysis. Includes data filtering, visualization optimization, and resource analysis techniques.
+description: Best practices for creating comprehensive Jupyter notebook data analyses with statistical rigor, outlier handling, and publication-quality visualizations
 ---
 
-# Jupyter Notebook Analysis
+# Jupyter Notebook Analysis Patterns
 
-## Data Filtering Patterns
+Expert knowledge for creating comprehensive, statistically rigorous Jupyter notebook analyses.
 
-### Regex-based Dataset Filtering
+## When to Use This Skill
 
-When filtering datasets for official/production data vs test/experimental data:
+- Creating multi-cell Jupyter notebooks for data analysis
+- Adding correlation analyses with statistical testing
+- Implementing outlier removal strategies
+- Building series of related visualizations (10+ figures)
+- Analyzing large datasets with multiple characteristics
 
-**Pattern**: Use inclusion + exclusion pattern approach
-```python
-def is_official_workflow(name):
-    """Filter for official workflows, excluding test runs."""
+## Common Pitfalls
 
-    # Exclusion patterns (what to remove)
-    exclusion_patterns = [
-        r'^Export',           # Utility workflows
-        r'test\d',            # test1, test2, etc.
-        r'Attempt\d',         # Retry runs
-        r'^Copy of',          # User copies
-        r'^\d+\.',            # Numbered prefixes (1. 2. etc.)
-        r'training workflow', # Tutorial/training
-    ]
+### Variable Shadowing in Loops
 
-    # Inclusion patterns (what to keep)
-    inclusion_patterns = [
-        r'VGP[0-9]',         # Official workflow numbers
-        r'v\d+\.\d+',        # Version numbers
-        r'release v',        # Release tags
-        r'WORKFLOW REPORT TEST', # Report testing (not execution)
-    ]
-
-    # Check exclusions first
-    for pattern in exclusion_patterns:
-        if re.search(pattern, name, re.IGNORECASE):
-            return False
-
-    # Then check if it matches inclusions
-    for pattern in inclusion_patterns:
-        if re.search(pattern, name, re.IGNORECASE):
-            return True
-
-    return False
-```
-
-**Why this matters**: Prevents analysis noise from test/debug runs while preserving legitimate test workflows (e.g., report generation tests).
-
-### Name Normalization for Version Grouping
-
-When analyzing data with multiple versions of the same entity:
+**Problem**: Using common variable names like `data` as loop variables overwrites global variables:
 
 ```python
-def normalize_name(name):
-    """Group different versions under canonical names."""
-
-    canonical_names = {
-        'VGP0': 'Mitogenome Assembly (VGP0)',
-        'VGP1': 'K-mer Profiling (VGP1)',
-        # ... etc
-    }
-
-    # Extract identifier (handles VGP/WF variations)
-    match = re.search(r'(VGP|WF)(\d+b?)', name, re.IGNORECASE)
-    if match:
-        workflow_num = match.group(2)
-        workflow_id = f'VGP{workflow_num}'  # Normalize WF to VGP
-        return canonical_names.get(workflow_id, f'VGP Workflow ({workflow_id})')
-
-    return name
+# BAD - Shadows global 'data' variable
+for i, (sp, data) in enumerate(species_by_gc_content[:10], 1):
+    val = data['gc_content']
+    print(f'{sp}: {val}')
 ```
 
-**Impact**: Reduces 86 unique workflow names to 12 canonical types for meaningful comparisons.
+After this loop, `data` is no longer your dataset list - it's the last species dict!
 
-### Analysis-Specific Data Subsetting
-
-**Use Case**: Different analyses within same notebook need different data requirements
-
-**Pattern**: Create named subsets rather than filtering the main dataset
+**Solution**: Use descriptive loop variable names:
 
 ```python
-# Load complete dataset
-with open('data.json') as f:
-    data = json.load(f)  # Keep original for general analysis
-
-# Create analysis-specific subsets
-data_with_species = [
-    item for item in data
-    if item.get('species_id') and item.get('genome_size')
-]
-
-data_with_timestamps = [
-    item for item in data
-    if item.get('start_time') and item.get('end_time')
-]
-
-# Report dataset composition
-print(f'📊 Dataset Summary:')
-print(f'  • Total items: {len(data)}')
-print(f'  • With species linkage: {len(data_with_species)} ({len(data_with_species)/len(data)*100:.1f}%)')
-print(f'  • With timing data: {len(data_with_timestamps)} ({len(data_with_timestamps)/len(data)*100:.1f}%)')
-print()
-print(f'  ℹ️  Analysis Strategy:')
-print(f'     - General resource analysis: ALL {len(data)} items')
-print(f'     - Genome size correlation: {len(data_with_species)} items with species data')
-print(f'     - Temporal analysis: {len(data_with_timestamps)} items with timestamps')
+# GOOD - Uses specific name
+for i, (sp, sp_data) in enumerate(species_by_gc_content[:10], 1):
+    val = sp_data['gc_content']
+    print(f'{sp}: {val}')
 ```
 
-**Documentation in Notebook**:
-Add clear markdown cells before each analysis section:
+**Detection**: If you see errors like "Type: <class 'dict'>" when expecting a list, check for variable shadowing in recent cells.
 
-```markdown
-**Important Note**:
-- **General resource analyses** use the **complete dataset** of all items
-- **This genome correlation section** uses only the **subset with Species IDs**
+**Prevention**:
+- Never use generic names (`data`, `item`, `value`) as loop variables
+- Use prefixed names (`sp_data`, `row_data`, `inv_data`)
+- Add validation cells that check variable types
+- Run "Restart & Run All" regularly to catch issues early
+
+**Common shadowing patterns to avoid**:
+```python
+for data in dataset:          # Shadows 'data'
+for i, data in enumerate():   # Shadows 'data'
+for key, data in dict.items() # Shadows 'data'
 ```
 
-**Benefits**:
-- Maximizes data usage (don't discard items for analyses that don't need all fields)
-- Clear documentation of what data each analysis uses
-- Prevents confusion about different result counts
-- Enables transparent reporting of data availability
+## Outlier Handling Best Practices
 
-**Example**: VGP workflow analysis
-- Full dataset (1,630 invocations): Tool-level resource analysis, workflow timing
-- Species subset (740 invocations): Genome size vs memory correlation
-- Both analyses valid and informative
+### Two-Stage Outlier Removal
 
-## Resource Analysis Patterns
+For analyses correlating characteristics across aggregated entities (e.g., species-level summaries):
 
-### Tool-Level Resource Over-Allocation Analysis
+1. **Stage 1: Count-based outliers (IQR method)**
+   - Remove entities with abnormally high sample counts
+   - Prevents over-represented entities from skewing correlations
+   - Apply BEFORE other analyses
 
-Pattern for identifying tools wasting resources:
+   ```python
+   import numpy as np
+   workflow_counts = [entity_data[id]['workflow_count'] for id in entity_data.keys()]
+   q1 = np.percentile(workflow_counts, 25)
+   q3 = np.percentile(workflow_counts, 75)
+   iqr = q3 - q1
+   upper_bound = q3 + 1.5 * iqr
+
+   outliers = [id for id in entity_data.keys()
+               if entity_data[id]['workflow_count'] > upper_bound]
+   for id in outliers:
+       del entity_data[id]
+   ```
+
+2. **Stage 2: Value-based outliers (percentile)**
+   - Remove extreme values for visualization clarity
+   - Apply ONLY to visualization data, not statistics
+   - Typically top 5% for highly skewed distributions
+
+   ```python
+   values = [entity_data[id]['metric'] for id in entity_data.keys()]
+   threshold = np.percentile(values, 95)
+   viz_entities = [id for id in entity_data.keys()
+                   if entity_data[id]['metric'] <= threshold]
+
+   # Use viz_entities for plotting
+   # Use full entity_data.keys() for statistics
+   ```
+
+### Characteristic-Specific Outlier Removal
+
+When analyzing genome characteristics vs metrics, remove outliers for the characteristic being analyzed:
 
 ```python
-# Calculate waste
-df['wasted_memory_gb'] = df['allocated_memory_gb'] - df['peak_memory_gb']
-df['memory_utilization_pct'] = (df['peak_memory_gb'] / df['allocated_memory_gb'] * 100)
+# After removing workflow count outliers, also remove heterozygosity outliers
+heterozygosity_values = [species_data[sp]['heterozygosity'] for sp in species_data.keys()]
 
-# Aggregate by tool
-tool_analysis = df.groupby('tool_name').agg({
-    'wasted_memory_gb': ['sum', 'mean', 'median'],
-    'memory_utilization_pct': ['mean', 'median'],
-    'allocated_memory_gb': ['mean', 'median'],
-    'peak_memory_gb': ['mean', 'median'],
-    'job_id': 'count'  # Number of jobs
-}).round(2)
+het_q1 = np.percentile(heterozygosity_values, 25)
+het_q3 = np.percentile(heterozygosity_values, 75)
+het_iqr = het_q3 - het_q1
+het_upper_bound = het_q3 + 1.5 * het_iqr
 
-# Sort by total waste to prioritize optimization
-tool_analysis = tool_analysis.sort_values(('wasted_memory_gb', 'sum'), ascending=False)
+het_outliers = [sp for sp in species_data.keys()
+                if species_data[sp]['heterozygosity'] > het_upper_bound]
+
+for sp in het_outliers:
+    del species_data[sp]
+
+print(f'Removed {len(het_outliers)} heterozygosity outliers (>{het_upper_bound:.2f}%)')
+print(f'New heterozygosity range: {min(vals):.2f}% - {max(vals):.2f}%')
 ```
 
-**Actionable outputs**:
-- Top tools by total wasted resources
-- Average utilization % (color-coded: <25% red, <50% orange, ≥50% green)
-- Potential savings estimates (70% of waste typically recoverable)
+**Apply separately for each characteristic**:
+- Genome size outliers for genome size analysis
+- Heterozygosity outliers for heterozygosity analysis
+- Repeat content outliers for repeat content analysis
 
-### Wallclock vs Cumulative Runtime Analysis
+### When to Skip Outlier Removal
 
-For workflow parallelization analysis:
+- Memory usage plots when investigating over-allocation patterns
+- Comparison plots (allocated vs used) where outliers reveal problems
+- User explicitly requests to see all data
+- Data is already limited (< 10 points)
 
-```python
-# Calculate wallclock time per workflow execution
-wallclock_data = df.groupby(['workflow_id', 'workflow_type']).agg({
-    'start_epoch': 'min',  # First job start
-    'end_epoch': 'max',    # Last job end
-    'runtime_hours': 'sum' # Cumulative runtime
-})
+**Document clearly** in plot titles and code comments which outlier removal is applied.
 
-wallclock_data['wallclock_hours'] = (
-    wallclock_data['end_epoch'] - wallclock_data['start_epoch']
-) / 3600
+## Statistical Rigor
 
-wallclock_data['parallelization_factor'] = (
-    wallclock_data['runtime_hours'] / wallclock_data['wallclock_hours']
-)
-```
+### Required for Correlation Analyses
 
-**Key metric - Parallelization Factor**:
-- **High (>5x)**: Good parallelization
-- **Medium (2-5x)**: Moderate parallelization
-- **Low (<2x)**: Sequential bottlenecks or inefficient parallelization
+1. **Pearson correlation with p-values**:
+   ```python
+   from scipy import stats
+   correlation, p_value = stats.pearsonr(x_values, y_values)
+   sig_text = 'significant' if p_value < 0.05 else 'not significant'
+   ```
 
-**Use cases**:
-- Estimate real completion times for workflow planning
-- Identify workflows that could benefit from architectural improvements
-- Understand resource requirements vs actual completion time
+2. **Report both metrics**:
+   - Correlation coefficient (r) - strength and direction
+   - P-value - statistical significance (α=0.05)
+   - Sample size (n)
 
-## Visualization Optimization
+3. **Display on plots**:
+   ```python
+   ax.text(0.98, 0.02,
+           f'r = {correlation:.3f}\np = {p_value:.2e}\n({sig_text})\nn = {len(data)} species',
+           transform=ax.transAxes, ...)
+   ```
 
-### Outlier Removal for Clarity
+## Large-Scale Analysis Structure
 
-When scatter plots are obscured by extreme outliers:
+### Organizing 60+ Cell Notebooks
 
-```python
-# Remove top 5% for visualization only
-threshold = df['metric'].quantile(0.95)
-df_viz = df[df['metric'] <= threshold]
+1. **Section headers** (markdown cells):
+   - Main sections: "## CPU Runtime Analysis", "## Memory Analysis"
+   - Subsections: "### Genome Size vs CPU Runtime"
 
-# Use full dataset for statistics
-print(f"Mean (all data): {df['metric'].mean():.2f}")
-print(f"Median (all data): {df['metric'].median():.2f}")
-print(f"\nVisualization uses {len(df_viz)/len(df)*100:.1f}% of data")
-print(f"Removed {len(df) - len(df_viz)} outliers for clarity")
+2. **Cell pairing pattern**:
+   - Markdown header + code cell for each analysis
+   - Keeps related content together
+   - Easier to navigate and debug
 
-# Plot with filtered data
-plt.scatter(df_viz['x'], df_viz['y'])
-plt.title('Scatter Plot (top 5% outliers removed for clarity)')
-```
+3. **Consistent naming**:
+   - Figure files: `fig18_genome_size_vs_cpu_hours.png`
+   - Variables: `species_data`, `genome_sizes_full`, `genome_sizes_viz`
+   - Functions: `safe_float_convert()` defined consistently
 
-**Important**: Always clarify in plot subtitle and console output what was filtered.
+4. **Progressive enhancement**:
+   - Start with basic analyses
+   - Add enriched data (Cell 7 pattern)
+   - Build increasingly complex correlations
+   - End with multivariate analyses (PCA)
 
-## Tool ID Parsing
+## Template Generation Pattern
 
-### Galaxy Tool Shed ID Extraction
-
-Galaxy tool IDs format: `toolshed.g2.bx.psu.edu/repos/owner/repo/toolname/version`
-
-**Correct extraction** (tool name is second-to-last element):
-```python
-def extract_tool_name(tool_id):
-    if tool_id:
-        parts = tool_id.split('/')
-        if len(parts) >= 2:
-            return parts[-2]  # Tool name (NOT parts[-1] which is version)
-        return tool_id
-    return 'Unknown'
-```
-
-**Common mistake**: Using `parts[-1]` returns version (e.g., "3+galaxy0") instead of tool name (e.g., "mitohifi").
-
-## Testing Strategies
-
-### Standalone Test Scripts
-
-Create simple test scripts without heavy dependencies for quick validation:
+For creating multiple similar analysis cells:
 
 ```python
-#!/usr/bin/env python3
-"""Test filtering logic without requiring pandas/jupyter"""
-import re
-import json
+# Create template with placeholder variables
+template = '''
+if len(data_with_species) > 0:
+    print('Analyzing {display} vs {metric}...\\n')
 
-def filter_function(name):
-    # ... filter logic
-    pass
+    # Aggregate data per species
+    species_data = {{}}
 
-# Load test data from JSON
-with open('test_data.json') as f:
-    test_cases = json.load(f)
-
-# Test and report
-all_passed = True
-for test in test_cases:
-    result = filter_function(test['name'])
-    expected = test['expected']
-    if result != expected:
-        print(f"✗ FAIL: {test['name']}")
-        all_passed = False
-    else:
-        print(f"✓ PASS: {test['name']}")
-
-print('\n' + '='*80)
-print('✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED')
-```
-
-**Benefits**:
-- No conda environment needed
-- Fast execution
-- Easy to share and run independently
-- Can validate logic before modifying notebook
-
-### Diagnosing Wrong File Loads
-
-**Symptom**: Expected data fields missing (e.g., "no metrics found", "no species IDs found")
-
-**Root Cause**: Often loading wrong file with similar name but different contents
-
-**Diagnostic Pattern**:
-```python
-import json
-
-# Compare what's in each file
-files_to_check = [
-    'enriched_data.json',
-    'metrics_data.json',
-    'merged_data.json'
-]
-
-for filepath in files_to_check:
-    try:
-        with open(filepath) as f:
-            data = json.load(f)
-
-        print(f'\n📄 {filepath}')
-        print(f'   Items: {len(data)}')
-
-        if data:
-            sample = data[0]
-            print(f'   Keys: {list(sample.keys())[:10]}...')  # First 10 keys
-
-            # Check for critical fields
-            has_species = sum(1 for item in data if item.get('species_id'))
-            has_metrics = sum(1 for item in data if item.get('metrics'))
-
-            print(f'   With species_id: {has_species} ({has_species/len(data)*100:.1f}%)')
-            print(f'   With metrics: {has_metrics} ({has_metrics/len(data)*100:.1f}%)')
-    except FileNotFoundError:
-        print(f'\n📄 {filepath} - NOT FOUND')
-    except Exception as e:
-        print(f'\n📄 {filepath} - ERROR: {e}')
-```
-
-**Common Issues**:
-
-1. **Loading enrichment file instead of merged file**
-   - Has species_id ✓
-   - Has metrics ✗
-   - **Fix**: Change to merged file
-
-2. **Loading metrics file instead of merged file**
-   - Has species_id ✗
-   - Has metrics ✓
-   - **Fix**: Change to merged file or run merge step
-
-3. **Loading old file after pipeline update**
-   - Missing new fields
-   - **Fix**: Re-run pipeline to regenerate file
-
-**Preventive Measures**:
-- Add file validation in load cell:
-  ```python
-  with open('data.json') as f:
-      data = json.load(f)
-
-  # Validate expected fields
-  if not data:
-      print('⚠️ ERROR: File is empty!')
-  else:
-      with_metrics = sum(1 for item in data if item.get('metrics'))
-      if with_metrics == 0:
-          print(f'⚠️ WARNING: No metrics found! Are you loading the right file?')
-  ```
-
-## Documentation Patterns
-
-### Two-Level Documentation
-
-Maintain both detailed technical docs and quick start guides:
-
-1. **IMPROVEMENTS_SUMMARY.md**: Comprehensive technical documentation
-   - Detailed methodology
-   - Code examples
-   - Cell IDs for notebook navigation
-   - Testing procedures
-   - Troubleshooting
-
-2. **QUICK_START.md**: User-friendly execution guide
-   - Expected results
-   - Example outputs
-   - Visual indicators of success
-   - Simple troubleshooting
-   - Next steps
-
-**User benefit**: Technical users get details, casual users get quick wins.
-
-## Galaxy API Data Enrichment
-
-### Enriching Invocations with Inputs and History Names
-
-When analyzing Galaxy workflow executions, basic invocation data lacks workflow inputs and history context needed for linking with external datasets (e.g., genome characteristics).
-
-**Problem**: Default `/api/invocations` endpoint returns minimal data:
-- Invocation ID, workflow ID, history ID, state, timestamps
-- **Missing**: workflow inputs, history names, input dataset details
-
-**Solution**: Use BioBlend to fetch full invocation and history details
-
-```python
-from bioblend.galaxy import GalaxyInstance
-
-def enrich_invocations_with_inputs_and_history(invocations, gi, skip_existing=True):
-    """
-    Enrich invocations with workflow inputs and history names.
-
-    Returns invocations with added fields:
-    - inputs: Dictionary of workflow input datasets
-    - history_name: Name of Galaxy history (often contains identifiers)
-    """
-    enriched = []
-
-    for inv in invocations:
-        # Skip if already enriched
-        if skip_existing and 'inputs' in inv and 'history_name' in inv:
-            enriched.append(inv)
+    for inv in data_with_species:
+        {name} = safe_float_convert(inv.get('{name}'))
+        if {name} is None:
             continue
+        # ... analysis code
+'''
 
-        # Get full invocation details (includes inputs)
-        full_invocation = gi.invocations.show_invocation(inv['id'])
-        inv['inputs'] = full_invocation.get('inputs', {})
+# Generate multiple cells from characteristics list
+characteristics = [
+    {'name': 'genome_size', 'display': 'Genome Size', 'unit': 'Gb'},
+    {'name': 'heterozygosity', 'display': 'Heterozygosity', 'unit': '%'},
+    # ...
+]
 
-        # Get history name
-        history_details = gi.histories.show_history(inv['history_id'])
-        inv['history_name'] = history_details.get('name', '')
-
-        enriched.append(inv)
-        time.sleep(0.2)  # Rate limiting
-
-    return enriched
+for char in characteristics:
+    code = template.format(**char)
+    # Write to notebook or temp file
 ```
 
-### Extracting Identifiers from History Names
+## Helper Function Pattern
 
-**Use case**: VGP (Vertebrate Genomes Project) uses Species IDs (ToLIDs) in history names
-
-**Pattern**: VGP ToLIDs follow format `[a-z][A-Z][a-z]{2}[A-Z][a-z]{2,3}\d+`
-- Examples: aGasCar1 (amphibian), bAcrTri1 (bird), fHopMal1 (fish), mBalRic1 (mammal)
+Define once, reuse throughout:
 
 ```python
-import re
-
-def extract_species_id(invocation):
-    """Extract VGP Species ID from history name or inputs."""
-
-    tolid_pattern = r'\b([a-z][A-Z][a-z]{2}[A-Z][a-z]{2,3}\d+)\b'
-
-    # Check history name first
-    history_name = invocation.get('history_name', '')
-    if history_name:
-        match = re.search(tolid_pattern, history_name)
-        if match:
-            return match.group(1)
-
-    # Fallback to inputs
-    inputs = invocation.get('inputs', {})
-    if inputs:
-        match = re.search(tolid_pattern, str(inputs))
-        if match:
-            return match.group(1)
-
-    return None
-```
-
-### Linking with External Data
-
-Once identifiers are extracted, link with external datasets:
-
-```python
-import pandas as pd
-
-# Load external data (e.g., genome characteristics)
-genome_data = pd.read_csv('genome_metadata.tsv', sep='\t')
-
-# Enrich invocations
-for inv in invocations:
-    species_id = extract_species_id(inv)
-    if species_id:
-        inv['species_id'] = species_id
-
-        # Link with genome data
-        genome_row = genome_data[genome_data['ToLID'] == species_id]
-        if not genome_row.empty:
-            inv['genome_size'] = genome_row['Genome size'].values[0]
-            inv['heterozygosity'] = genome_row['Heterozygosity'].values[0]
-
-# Now analyze: correlate resource usage with genome characteristics
-```
-
-**Performance**:
-- ~0.2s per invocation (2 API calls: show_invocation + show_history)
-- For 2,330 invocations: ~8-12 minutes
-- ~4,660 API calls total
-
-**Benefits**:
-- Links computational resource usage with biological characteristics
-- Enables analysis: "Do larger genomes require more memory?"
-- Tracks which species were processed by which workflows
-
-## Complete Data Fetching Pipelines
-
-### Multi-Step Pipeline with Automatic Pagination
-
-For complex data fetching from APIs (e.g., Galaxy, GitHub), structure as incremental pipeline:
-
-**Pattern**:
-```
-Step 1: Fetch base data (auto-paginated)
-   ↓
-Step 2: Filter to relevant subset
-   ↓
-Step 2.5: Enrich filtered data with additional API calls
-   ↓
-Step 3: Fetch detailed metrics
-   ↓
-Step 4: Fetch granular details (parallelized)
-```
-
-**Why incremental**:
-- Resume capability at each step
-- Save filtered data before expensive API calls
-- Easier debugging (inspect intermediate outputs)
-- Better progress tracking
-
-**Implementation**:
-
-```python
-# Step 1: Auto-paginated fetch
-def fetch_with_pagination(user_id, limit=100, skip_existing=True):
-    offset = 0
-    all_data = []
-
-    while True:
-        # Fetch page
-        data = api_fetch(offset=offset, limit=limit)
-
-        # Stop if empty
-        if len(data) == 0:
-            break
-
-        all_data.extend(data)
-
-        # Stop if less than limit (reached end)
-        if len(data) < limit:
-            break
-
-        offset += limit
-
-    return all_data
-
-# Step 2: Filter
-filtered = [item for item in all_data if is_relevant(item)]
-
-# Step 2.5: Enrich (only filtered items)
-enriched = enrich_with_additional_data(filtered)
-
-# Step 3: Detailed fetch (only enriched items)
-with_details = fetch_details(enriched)
-```
-
-**Resume pattern**:
-```python
-# Each step saves to dated file
-step1_file = f'base_data_{date}.json'
-step2_file = f'filtered_data_{date}.json'
-step25_file = f'enriched_data_{date}.json'
-
-# Can restart from any step by loading intermediate file
-if os.path.exists(step25_file):
-    with open(step25_file) as f:
-        enriched = json.load(f)
-    # Skip to step 3
-```
-
-**Benefits**:
-- Reduced API calls (only enrich what you need)
-- Resume from failures without re-fetching everything
-- Clear progress tracking
-- Easier to add new enrichment steps
-
-### Independent Step Execution Pattern
-
-**Problem**: Users want to re-run enrichment steps (e.g., with different regex patterns) without re-running expensive fetch steps.
-
-**Solution**: Add configuration cell that allows loading from existing file OR using pipeline variable
-
-**Implementation**:
-```python
-# Configuration cell (place before enrichment step)
-LOAD_FROM_FILE = False  # Set to True to load from existing file
-DATA_FILE = f'filtered_data_{date_string}.json'
-
-# Execution cell
-if LOAD_FROM_FILE:
-    print(f'📂 Loading data from file: {DATA_FILE}')
-    with open(DATA_FILE, 'r') as f:
-        data_to_process = json.load(f)
-    print(f'   • Loaded: {len(data_to_process)} items')
-else:
+def safe_float_convert(value):
+    """Convert string to float, handling comma separators"""
+    if not value or not str(value).strip():
+        return None
     try:
-        data_to_process = filtered_data  # From previous step
-        print(f'📋 Using data from previous step: {len(data_to_process)} items')
-    except NameError:
-        print('⚠️ ERROR: "filtered_data" variable not found.')
-        print('   Set LOAD_FROM_FILE = True to load from file instead.')
-        data_to_process = []
-
-# Enrichment step uses data_to_process regardless of source
-enriched = enrich_function(data_to_process)
+        return float(str(value).replace(',', ''))
+    except (ValueError, TypeError):
+        return None
 ```
 
-**User Benefits**:
-1. **Time savings**: Skip 15-30 min of fetch/filter steps
-2. **Flexibility**: Re-run enrichment with different settings
-3. **Testing**: Test extraction patterns without full pipeline
-4. **Debugging**: Easier to diagnose enrichment issues
+Include in Cell 7 (enrichment) and reference: "# Helper function (same as Cell 7)"
 
-**Documentation Requirements**:
-- Add "Running Step X Independently" section to README
-- Include quick start guide for independent execution
-- Add troubleshooting entry for "variable not found" error
-- Update pipeline diagram to show optional entry points
+## Publication-Quality Figures
 
-**Backward Compatibility**:
-- Default: `LOAD_FROM_FILE = False` (uses pipeline variable)
-- Existing workflows unchanged
-- No breaking changes to cell execution order
+Standard settings:
+- DPI: 300
+- Figure size: (12, 8) for single plots, (16, 7) for side-by-side
+- Grid: `alpha=0.3, linestyle='--'`
+- Point size: Proportional to sample count (`s=[50 + count*20 for count in counts]`)
+- Colormap: 'viridis' for workflow counts
 
-## Multi-Source Data Merging
+## Notebook Size Management
 
-### Problem: Complementary Data in Separate Files
+For notebooks > 256 KB:
+- Use `jq` to read specific cells: `cat notebook.ipynb | jq '.cells[10:20]'`
+- Count cells: `cat notebook.ipynb | jq '.cells | length'`
+- Check sections: `cat notebook.ipynb | jq '.cells[75:81] | .[].source[:2]'`
 
-When data pipelines produce separate outputs with complementary information:
-- **Enrichment file**: Has identifiers/metadata but no metrics
-- **Metrics file**: Has metrics but no identifiers/metadata
+## Data Enrichment Pattern
 
-**Example**: Galaxy workflow analysis
-- `enriched_data.json`: Species IDs, history names, inputs (no resource metrics)
-- `metrics_data.json`: Memory, CPU, runtime metrics (no species linkage)
+When linking external metadata with analysis data:
 
-### Solution: ID-Based Dictionary Merge
-
-**Pattern**:
 ```python
-# Load both data sources
-with open('enriched_data.json') as f:
-    enriched = json.load(f)
-with open('metrics_data.json') as f:
-    metrics = json.load(f)
+# Cell 6: Load genome metadata
+import csv
+genome_data = []
+with open('genome_metadata.tsv') as f:
+    reader = csv.DictReader(f, delimiter='\t')
+    genome_data = list(reader)
 
-# Create lookup dictionary from enrichment data
-enriched_dict = {item['id']: item for item in enriched}
+genome_lookup = {}
+for row in genome_data:
+    species_id = row['species_id']
+    if species_id not in genome_lookup:
+        genome_lookup[species_id] = []
+    genome_lookup[species_id].append(row)
 
-# Merge: Add enrichment fields to metrics data
-merged = []
-for metric_item in metrics:
-    item_id = metric_item['id']
-    if item_id in enriched_dict:
-        enriched_item = enriched_dict[item_id]
-        # Add enrichment fields
-        metric_item['species_id'] = enriched_item.get('species_id')
-        metric_item['history_name'] = enriched_item.get('history_name')
-        metric_item['inputs'] = enriched_item.get('inputs', {})
-        merged.append(metric_item)
+# Cell 7: Enrich workflow data with genome characteristics
+for inv in data:
+    species_id = inv.get('species_id')
 
-# Save merged result
-with open('merged_data.json', 'w') as f:
-    json.dump(merged, f, indent=2)
+    if species_id and species_id in genome_lookup:
+        genome_info = genome_lookup[species_id][0]
 
-print(f'Merged {len(merged)} items')
-print(f'With identifier: {sum(1 for item in merged if item.get("species_id"))}')
+        # Add genome characteristics
+        inv['genome_size'] = genome_info.get('Genome size', '')
+        inv['heterozygosity'] = genome_info.get('Heterozygosity', '')
+        # ... other characteristics
+    else:
+        # Set to None for missing data
+        inv['genome_size'] = None
+        inv['heterozygosity'] = None
+
+# Create filtered dataset
+data_with_species = [inv for inv in data if inv.get('species_id') and inv.get('genome_size')]
 ```
 
-**Key Principles**:
-1. **Choose primary dataset**: Use the one with most critical data (usually metrics) as base
-2. **Lookup pattern**: Create dictionary from secondary dataset for O(1) lookups
-3. **Preserve all primary data**: Don't filter out items without enrichment
-4. **Track merge statistics**: Report how many items matched, have identifiers, etc.
+## Debugging Data Availability
 
-**Integration with Pipeline**:
-- Add merge step AFTER both data sources are complete
-- Make merge step fast (<1 min) since it's local processing only
-- Include in pipeline documentation with clear data flow diagram
+Before creating correlation plots, verify data overlap:
 
-**Benefits**:
-- Automated merging (no manual file manipulation)
-- Consistent results (same merge logic every time)
-- Resume-friendly (can re-merge without re-fetching)
-- Clear statistics for verification
+```python
+# Check how many entities have both metrics
+species_with_metric_a = set(inv.get('species_id') for inv in data
+                            if inv.get('metric_a'))
+species_with_metric_b = set(inv.get('species_id') for inv in data
+                            if inv.get('metric_b'))
+
+overlap = species_with_metric_a.intersection(species_with_metric_b)
+print(f"Species with both metrics: {len(overlap)}")
+
+if len(overlap) < 10:
+    print("⚠️ Warning: Limited data for correlation analysis")
+    print(f"  Metric A: {len(species_with_metric_a)} species")
+    print(f"  Metric B: {len(species_with_metric_b)} species")
+    print(f"  Overlap: {len(overlap)} species")
+```
+
+### Variable State Validation
+
+When debugging notebook errors, add validation cells to check variable integrity:
+
+```python
+# Validation cell - place before error-prone sections
+print('=== VARIABLE VALIDATION ===')
+print(f'Type of data: {type(data)}')
+print(f'Is data a list? {isinstance(data, list)}')
+
+if isinstance(data, list):
+    print(f'Length: {len(data)}')
+    if len(data) > 0:
+        print(f'First item type: {type(data[0])}')
+        print(f'First item keys: {list(data[0].keys())[:10]}')
+elif isinstance(data, dict):
+    print(f'⚠️  WARNING: data is a dict, not a list!')
+    print(f'Dict keys: {list(data.keys())[:10]}')
+    print(f'This suggests variable shadowing occurred.')
+```
+
+**When to use**:
+- After "Restart & Run All" produces errors
+- When error messages suggest wrong variable type
+- Before cells that fail intermittently
+- In notebooks with 50+ cells
+
+**Best practice**: Include automatic validation in cells that depend on critical global variables.
+
+## Programmatic Notebook Manipulation
+
+When inserting cells into large notebooks:
+
+```python
+import json
+
+# Read notebook
+with open('notebook.ipynb', 'r') as f:
+    notebook = json.load(f)
+
+# Create new cell
+new_cell = {
+    "cell_type": "code",
+    "execution_count": None,
+    "metadata": {},
+    "outputs": [],
+    "source": [line + '\n' for line in code.split('\n')]
+}
+
+# Insert at position
+insert_position = 50
+notebook['cells'] = (notebook['cells'][:insert_position] +
+                     [new_cell] +
+                     notebook['cells'][insert_position:])
+
+# Write back
+with open('notebook.ipynb', 'w') as f:
+    json.dump(notebook, f, indent=1)
+```
+
+## Best Practices Summary
+
+1. **Always check data availability** before creating analyses
+2. **Document outlier removal** clearly in titles and comments
+3. **Use consistent naming** for variables and figures
+4. **Include statistical testing** for all correlations
+5. **Separate visualization from statistics** when filtering outliers
+6. **Create templates** for repetitive analyses
+7. **Use helper functions** consistently across cells
+8. **Organize with markdown headers** for navigation
+9. **Test with small datasets** before running full analyses
+10. **Save intermediate results** for expensive computations
