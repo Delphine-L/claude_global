@@ -236,6 +236,176 @@ Standard settings:
 - Point size: Proportional to sample count (`s=[50 + count*20 for count in counts]`)
 - Colormap: 'viridis' for workflow counts
 
+## Creating Analysis Notebooks for Scientific Publications
+
+When creating Jupyter notebooks to accompany manuscript figures:
+
+### Structure Pattern
+1. **Title and metadata** - Date, dataset info, sample sizes
+2. **Overview** - Context from paper abstract/intro
+3. **Figure-by-figure analysis**:
+   - Code cell to display image
+   - Detailed figure legend (publication-ready)
+   - Comprehensive analysis paragraph explaining:
+     - What the metric measures
+     - Statistical results
+     - Mechanistic explanation
+     - Biological/technical implications
+4. **Methods section** - Complete reproducibility information
+5. **Conclusions** - Summary of findings
+
+### Table of Contents
+
+For analysis notebooks >10 cells, add a navigable table of contents at the top:
+
+**Benefits**:
+- Quick navigation to specific analyses
+- Clear overview of notebook structure
+- Professional presentation
+- Easier for collaborators
+
+**Implementation** (Markdown cell):
+```markdown
+# Analysis Name
+
+## Table of Contents
+
+1. [Data Loading](#data-loading)
+2. [Data Quality Metrics](#data-quality-metrics)
+3. [Figure 1: Completeness](#figure-1-completeness)
+4. [Figure 2: Contiguity](#figure-2-contiguity)
+5. [Figure 3: Scaffold Validation](#figure-3-scaffold-validation)
+...
+10. [Methods](#methods)
+11. [References](#references)
+
+---
+```
+
+**Section Headers** (Markdown cells):
+```markdown
+## Data Loading
+
+[Your code/analysis]
+
+---
+
+## Data Quality Metrics
+
+[Your code/analysis]
+```
+
+**Auto-generation**: For large notebooks, consider generating TOC programmatically:
+```python
+from IPython.display import Markdown
+
+sections = ['Introduction', 'Data Loading', 'Analysis', ...]
+toc = "## Table of Contents\n\n"
+for i, section in enumerate(sections, 1):
+    anchor = section.lower().replace(' ', '-')
+    toc += f"{i}. [{section}](#{anchor})\n"
+
+display(Markdown(toc))
+```
+
+### Methods Documentation
+
+Always include a Methods section documenting:
+- Data sources with accession numbers
+- Key algorithms and formulas
+- Statistical approaches
+- Software versions
+- Special adjustments (e.g., sex chromosome correction)
+- Literature citations
+
+**Example**:
+```markdown
+## Methods
+
+### Karyotype Data
+
+Karyotype data (diploid 2n and haploid n chromosome numbers) was manually curated from peer-reviewed literature for 97 species representing 17.8% of the VGP Phase 1 dataset (n = 545 assemblies).
+
+#### Sex Chromosome Adjustment
+
+When both sex chromosomes are present in the main haplotype, the expected number of chromosome-level scaffolds is:
+
+**expected_scaffolds = n + 1**
+
+For example:
+- Asian elephant: 2n=56, n=28, has X+Y → expected 29 scaffolds
+- White-throated sparrow: 2n=82, n=41, has Z+W → expected 42 scaffolds
+
+This adjustment accounts for the biological reality that X and Y (or Z and W) are distinct chromosomes.
+```
+
+### Writing Style Matching
+To match manuscript style:
+- Read draft paper PDF to extract tone and terminology
+- Use same technical vocabulary
+- Match paragraph structure (observation → mechanism → implication)
+- Include specific details (tool names, file formats, software versions)
+- Use first-person plural ("we") if paper does
+- Maintain consistent bullet point/list formatting
+
+### Example Code Pattern
+```python
+# Display figure
+from IPython.display import Image, display
+from pathlib import Path
+
+FIG_DIR = Path('figures/analysis_name')
+display(Image(filename=str(FIG_DIR / 'figure_01.png')))
+```
+
+### Figure Legend Format
+**Figure N. [Short title].** [Complete description of panels and what's shown]. [Statistical tests used]. [Sample sizes]. [Scale information]. [Color coding].
+
+### Analysis Paragraph Structure
+1. **What it measures** - Define the metric/comparison
+2. **Statistical result** - Quantitative findings with p-values
+3. **Mechanistic explanation** - Why this result occurs
+4. **Implications** - What this means for conclusions
+
+### Methods Section Must Include
+- Dataset source and filtering criteria
+- Metric definitions
+- Outlier handling approach
+- Statistical methods with justification
+- Software versions and tools
+- Reproducibility information
+- Known limitations
+
+This approach creates notebooks that serve both as analysis documentation and as supplementary material for publications.
+
+### Environment Setup
+
+For CLI-based workflows (Claude Code, SSH sessions):
+
+```bash
+# Run in background with token authentication
+/path/to/conda/envs/ENV_NAME/bin/jupyter lab --no-browser --port=8888
+```
+
+**Parameters**:
+- `--no-browser`: Don't auto-open browser (for remote sessions)
+- `--port=8888`: Specify port (default, can change if occupied)
+- Run in background: Use `run_in_background=true` in Bash tool
+
+**Access URL format**:
+```
+http://localhost:8888/lab?token=TOKEN_STRING
+```
+
+**To stop later**:
+- Find shell ID from BashOutput tool
+- Use KillShell with that ID
+
+**Installation if missing**:
+```bash
+/path/to/conda/envs/ENV_NAME/bin/pip install jupyterlab
+```
+
 ## Notebook Size Management
 
 For notebooks > 256 KB:

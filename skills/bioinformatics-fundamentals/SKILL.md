@@ -426,6 +426,277 @@ chr1    1000    2000    feature_name    score    +
 3. **Use representative data:** Subsample proportionally, not randomly
 4. **Verify file sizes:** Too small = overly filtered
 
+## Genome Ark Data Retrieval
+
+### Overview
+Genome Ark (s3://genomeark/) is a public AWS S3 bucket containing VGP assemblies and QC data. Access requires no credentials using `--no-sign-request`.
+
+### Directory Structure
+```
+s3://genomeark/species/{SPECIES_NAME}/{TOLID}/
+├── assembly_vgp_HiC_2.0/          # Standard HiC assembly
+├── assembly_vgp_standard_2.1/     # Standard assembly
+├── assembly_vgp_trio_1.0/         # Trio assembly
+├── assembly_curated/              # Manually curated
+├── assembly_{METHOD}_{VERSION}/   # Method-specific (e.g., assembly_verkko_1.4)
+└── genomic_data/                  # Raw sequencing data
+```
+
+### GenomeScope Data Locations
+GenomeScope summaries can be in multiple locations - search comprehensively:
+
+**Common paths** (priority order):
+1. `{assembly}/evaluation/genomescope/{TOLID}_genomescope__Summary.txt`
+2. `{assembly}/evaluation/genomescope2/{TOLID}_genomescope__Summary.txt`
+3. `{assembly}/qc/genomescope/{TOLID}_genomescope__Summary.txt`
+4. `{assembly}/intermediates/genomescope/{TOLID}_genomescope__Summary.txt`
+
+**Search strategy**:
+1. Dynamically discover assembly folders (not all species use same structure)
+2. Search multiple subfolder locations per assembly
+3. Try standard assemblies first (HiC_2.0, standard_2.1)
+4. Fall back to method-specific assemblies
+
+### Python Implementation Pattern
+
+```python
+def search_genomescope_recursive(species_name, tolid):
+    """Search for GenomeScope data across all assembly folders."""
+    species_s3 = species_name.replace(' ', '_')
+
+    # 1. Discover assembly folders
+    result = subprocess.run(
+        ['aws', 's3', 'ls', f's3://genomeark/species/{species_s3}/{tolid}/',
+         '--no-sign-request'],
+        capture_output=True, text=True
+    )
+
+    assembly_folders = []
+    for line in result.stdout.strip().split('\n'):
+        if 'PRE' in line:
+            folder = line.split('PRE')[1].strip().rstrip('/')
+            if folder.startswith('assembly'):
+                assembly_folders.append(folder)
+
+    # 2. Search patterns
+    patterns = [
+        'evaluation/genomescope/{tolid}_genomescope__Summary.txt',
+        'evaluation/genomescope2/{tolid}_genomescope__Summary.txt',
+        'qc/genomescope/{tolid}_genomescope__Summary.txt',
+        'intermediates/genomescope/{tolid}_genomescope__Summary.txt',
+    ]
+
+    # 3. Try each combination
+    for assembly in assembly_folders:
+        for pattern in patterns:
+            s3_path = f's3://genomeark/species/{species_s3}/{tolid}/{assembly}/{pattern.format(tolid=tolid)}'
+            result = subprocess.run(
+                ['aws', 's3', 'cp', s3_path, '-', '--no-sign-request'],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+
+    return None
+```
+
+### GenomeScope Summary Parsing
+
+```python
+def parse_genomescope_summary(content):
+    """Extract genome characteristics from GenomeScope2 summary."""
+    data = {}
+
+    # Genome Haploid Length (max value - second column)
+    match = re.search(r'Genome Haploid Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
+    if match:
+        data['genome_size_genomescope'] = int(match.group(1).replace(',', ''))
+
+    # Heterozygosity percentage (max value)
+    match = re.search(r'Heterozygous \(ab\)\s+[\d.]+%\s+([\d.]+)%', content)
+    if match:
+        data['heterozygosity_percent'] = float(match.group(1))
+
+    # Genome Unique Length (max value)
+    match = re.search(r'Genome Unique Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
+    if match:
+        data['unique_length'] = int(match.group(1).replace(',', ''))
+
+    # Genome Repeat Length (max value)
+    match = re.search(r'Genome Repeat Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
+    if match:
+        data['repeat_length'] = int(match.group(1).replace(',', ''))
+
+    # Calculate repeat content percentage
+    if 'repeat_length' in data and 'unique_length' in data:
+        total = data['repeat_length'] + data['unique_length']
+        if total > 0:
+            data['repeat_content_percent'] = (data['repeat_length'] / total) * 100
+
+    return data
+```
+
+### Best Practices
+
+1. **Rate limiting**: Add 0.2s delay between successful fetches to be respectful to AWS
+2. **Caching**: Check if file exists locally before fetching
+3. **Timeout**: Use 10-15s timeout per request
+4. **Assembly discovery**: Always discover assemblies dynamically - don't assume structure
+5. **Multiple locations**: GenomeScope data may be in evaluation/, qc/, or intermediates/
+6. **Expected coverage**: ~15-20% of VGP assemblies have GenomeScope data available
+
+### Common Issues
+
+**Species not found**: Some species use different naming (check exact spacing/underscores)
+```bash
+# Search for species
+aws s3 ls s3://genomeark/species/ --no-sign-request | grep -i "species_name"
+```
+
+**Assembly folder variations**: Not all use standard names
+```bash
+# List all assemblies for a species
+aws s3 ls s3://genomeark/species/{SPECIES}/{TOLID}/ --no-sign-request
+```
+
+### AWS CLI Setup
+
+```bash
+# Install AWS CLI (no credentials needed for Genome Ark)
+conda install -c conda-forge awscli
+
+# Test access
+aws s3 ls s3://genomeark/species/ --no-sign-request | head
+```
+
+## Karyotype Data Curation and Literature Search
+
+### Overview
+Karyotype data (diploid 2n and haploid n chromosome numbers) is critical for genome assembly validation but rarely available via APIs. Manual literature curation is required.
+
+### Search Strategy
+
+#### Effective Search Terms
+```
+"{species_name} karyotype chromosome 2n"
+"{species_name} diploid number karyotype"
+"{genus} karyotype evolution"
+"cytogenetic analysis {family_name}"
+"{species_name} chromosome number diploid"
+```
+
+#### Best Reference Sources
+1. **PubMed/PMC**: Primary cytogenetic studies
+2. **ResearchGate**: Karyotype descriptions and figures
+3. **Specialized databases**:
+   - Bird Chromosome Database: https://sites.unipampa.edu.br/birdchromosomedatabase/
+   - Animal Genome Size Database: http://www.genomesize.com/
+4. **Genome assembly papers**: Often mention expected karyotype
+5. **Comparative cytogenetic studies**: Family-level analyses
+
+#### Search Time Estimates
+- **Model organisms, domestic species**: 2-3 minutes
+- **Well-studied taxonomic groups**: 5-10 minutes
+- **Rare/uncommon species**: 10-20 minutes or not found
+
+### Taxonomic Conservation Patterns
+
+#### Mammals
+- **Cetaceans**: Highly conserved 2n = 44, n = 22 (exceptions: pygmy sperm whale, right whale, beaked whales = 2n = 42)
+- **Felidae**: Conserved 2n = 38, n = 19
+- **Canidae**: Conserved 2n = 78, n = 39
+- **Primates**: Variable (great apes 2n = 48, macaques 2n = 42, marmosets 2n = 46)
+
+#### Birds
+- **Anatidae (waterfowl)**: Highly conserved 2n = 80, n = 40 across ducks, geese, swans
+- **Galliformes (game birds)**: Typically 2n = 78, n = 39 (chicken, quail, grouse)
+- **Passerines**: Variable 2n = 78-82, most common 2n = 80
+- **Ancestral avian karyotype**: Putative 2n = 80
+- **General pattern**: 50.7% of birds have 2n = 78-82; 21.7% have exactly 2n = 80
+
+#### Reptiles
+- **Lacertidae (wall lizards)**: Often 2n = 38, n = 19
+
+### Genome Assembly Interpretation
+
+⚠️ **Warning**: Chromosome-level assemblies often report fewer chromosomes than actual diploid number
+
+**Why**: Assemblies typically capture only:
+- Macrochromosomes (large chromosomes)
+- Larger microchromosomes
+- Small microchromosomes remain unassembled
+
+**Example**: Waterfowl with 2n = 80 often have genome assemblies with 34-42 "chromosomes"
+- True karyotype: 10 macro pairs + 30 micro pairs = 80
+- Assembly: ~34-42 scaffolds (only macro + larger micros)
+
+### Using Conservation for Inference
+
+When specific karyotype data is unavailable but genus/family patterns are strong:
+
+1. **High confidence inference** (acceptable for publication):
+   - Multiple congeneric species confirmed
+   - Family-level conservation documented
+   - No known exceptions in genus
+
+2. **Document inference clearly**:
+   ```csv
+   accession,taxid,species,2n,n,notes,reference
+   GCA_XXX,123,Species name,80,40,Inferred from Anatidae conservation,https://family-level-study.url
+   ```
+
+3. **Priority for direct confirmation**:
+   - Species with conservation exceptions
+   - Type specimens or reference species
+   - Phylogenetically divergent lineages
+
+### VGP-Specific: Sex Chromosome Adjustment
+
+When both sex chromosomes are in main haplotype (common in VGP assemblies):
+- **Expected scaffolds = n + 1** (not n)
+- **Reason**: X+Y or Z+W = two distinct chromosomes
+- **Check**: VGP metadata column "Sex chromosomes main haplotype"
+- **Patterns**: "Has X and Y", "Has Z and W", "Has X1, X2, and Y"
+
+### Data Recording Format
+
+**CSV Structure**:
+```csv
+accession,taxid,species_name,diploid_2n,haploid_n,notes,reference
+GCA_XXXXXX,12345,Species name,80,40,Brief description,https://doi.org/...
+```
+
+**Notes field examples**:
+- "Standard {family} karyotype"
+- "Conserved {genus} karyotype"
+- "Inferred from {family} conservation"
+- "Unusual karyotype for family"
+- "Geographic variation reported"
+
+### Prioritization for Literature Searches
+
+**TIER 1** (>90% success rate):
+- Model organisms (zebrafish, mouse, medaka)
+- Domestic species (chicken, goat, sheep)
+- Game animals (waterfowl, deer)
+- Laboratory species (fruit fly, nematode)
+
+**TIER 2** (70-90% success rate):
+- Well-studied taxonomic groups (Podarcis lizards, corvids)
+- Conservation focus species (raptors, large mammals)
+- Commercial species (salmonids, oysters)
+
+**TIER 3** (50-70% success rate):
+- Common but not economically important
+- Widespread distribution
+- Recent phylogenetic interest
+
+**Low priority** (<50% success rate):
+- Deep-sea species
+- Rare/endangered without conservation genetics
+- Recently described species
+- Cryptic species complexes
+
 ## Related Skills
 
 - **vgp-pipeline** - VGP workflows process Hi-C and HiFi data

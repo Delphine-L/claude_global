@@ -24,6 +24,28 @@ The Vertebrate Genome Project (VGP) assembly pipeline consists of Galaxy workflo
 - **WF6**: **Required** (no Hi-C scaffolding step)
 - **Note**: Skips WF8 entirely
 
+## Workflow Selection by Data Availability
+
+### Non-trio workflows (HiFi reads only)
+- **VGP1 (WF1)**: K-mer profiling with HiFi reads alone
+- **VGP3 (WF3)**: HiFi-only assembly with HiFiasm
+
+### Trio workflows (HiFi + Parental Illumina)
+- **VGP2 (WF2)**: Trio k-mer profiling (HiFi child + Illumina parents)
+- **VGP5 (WF5)**: Trio-phased assembly with HiFiasm
+
+### Universal scaffolding workflows
+- **RagTag scaffolding**: Used for both trio and non-trio assemblies
+- Requires reference genome specification
+
+### Methods language pattern
+When documenting workflow selection in publications:
+```
+"For species with available parental data (trio datasets), we employed
+VGP2 → VGP5 workflows. For species without parental data (non-trio datasets),
+we performed VGP1 → VGP3 workflows."
+```
+
 ## Workflow Descriptions
 
 | Workflow | Name | Description |
@@ -95,10 +117,72 @@ else:  # Trajectory A or B
 ### After WF8 (Hi-C Scaffolding)
 - Check Pretext Hi-C contact maps
 - Verify chromosome-level scaffolding
+- **Validate against expected karyotype** (see Karyotype Validation below)
 
 ### After WF9 (Decontamination)
 - Review contamination reports
 - Check for unexpected removals
+
+## Karyotype-Based Scaffold Validation
+
+### Sex Chromosome Adjustment
+
+**Problem**: VGP assemblies often place both sex chromosomes (X+Y or Z+W) in the main haplotype, requiring adjustment to expected chromosome counts.
+
+**Solution**: When both sex chromosomes present, expected = n + 1 (not n)
+
+**Implementation**:
+```python
+# Adjust haploid expected when BOTH sex chromosomes in main haplotype
+df['num_chromosomes_haploid_adjusted'] = df['num_chromosomes_haploid'].copy()
+
+both_sex_chr_patterns = [
+    'Has X and Y',
+    'Has Z and W',
+    'has Z and W',
+    'Has X1, X2, and Y',
+    'Has Z1, Z2, and W',
+    'Has 5X and 5Y'
+]
+
+if 'Sex chromosomes main haploptype' in df.columns:
+    has_both_sex = df['Sex chromosomes main haploptype'].isin(both_sex_chr_patterns)
+    df.loc[has_both_sex & df['num_chromosomes_haploid'].notna(),
+           'num_chromosomes_haploid_adjusted'] = \
+        df.loc[has_both_sex & df['num_chromosomes_haploid'].notna(),
+              'num_chromosomes_haploid'] + 1
+```
+
+**Biological Reasoning**:
+- Diploid organisms have two sex chromosomes (XX, XY, ZZ, ZW)
+- X and Y (or Z and W) are distinct chromosomes
+- If both in main haplotype → two separate scaffolds expected
+- Example: Asian elephant 2n=56, n=28, has X+Y → expect 29 scaffolds
+
+**Impact**: Improved perfect match rate from 0% to ~90% in validation analyses
+
+**Validation Metrics**:
+```python
+# Use adjusted counts for validation
+achieved = df['total_number_of_chromosomes']
+expected = df['num_chromosomes_haploid_adjusted']
+
+perfect_matches = (achieved == expected).sum()
+within_1 = ((achieved - expected).abs() <= 1).sum()
+ratio = achieved / expected
+```
+
+### Common Pitfalls
+
+**❌ Wrong**: Compare diploid expected (2n) to haploid assembly
+- Results in ~50% achievement rates
+- Biologically incorrect
+
+**❌ Wrong**: Use haploid (n) when both sex chromosomes present
+- Underestimates by 1
+- Shows artificial "extra scaffold" problem
+
+**✅ Correct**: Use adjusted haploid (n or n+1 depending on sex chromosome configuration)
 
 ## WF0 (Mitochondrial) Handling
 
@@ -152,6 +236,24 @@ When creating workflow diagrams:
 | C | HiFi only | WF1 | WF3 | WF6 | - | WF9→Pre | pri/alt |
 
 `[WF6]` = optional, `WF6` = required, `-` = skipped
+
+## Reference Genomes for Scaffolding
+
+### Common Reference Genome
+
+**GCA_011100685.1** - Frequently used reference genome for RagTag scaffolding in canid genome assemblies.
+
+When documenting scaffolding in methods sections:
+- Always specify the reference genome accession
+- Include version number if applicable
+- Example: "scaffolded using RagTag v2.1.0 with the reference genome GCA_011100685.1"
+
+### Best Practices
+
+**For reproducibility:**
+- Document exact accession used
+- Specify if custom modifications were made to reference
+- Note if different references used for different species/assemblies
 
 ## Resource Analysis Insights
 
@@ -472,6 +574,99 @@ for inv in workflow_invocations:
 ```
 
 **Success Rate**: Expect ~80-90% success rate for VGP species in GenomeArk.
+
+## Curation Impact Analysis - Comparing Methods
+
+### Data Filtering for Fair Comparison
+When comparing Dual vs Pri/alt curation:
+
+```python
+def load_data():
+    df = pd.read_csv(DATA_FILE)
+
+    # Create curation type column
+    df['curation_type'] = 'None'
+    df.loc[df['Dual'] == 'Y', 'curation_type'] = 'Dual'
+    df.loc[df['Pri/alt'] == 'Y', 'curation_type'] = 'Pri/alt'
+
+    # Filter to assemblies with accessions only
+    df = df[df['accession'].notna()].copy()
+
+    # EXPLICITLY exclude uncurated assemblies
+    df = df[df['curation_type'].isin(['Dual', 'Pri/alt'])].copy()
+
+    # Verify no "None" remain
+    none_count = (df['curation_type'] == 'None').sum()
+    if none_count > 0:
+        print(f"WARNING: {none_count} uncurated assemblies found!")
+
+    return df
+```
+
+### Quality Metrics Focus
+**Include**: Post-curation quality metrics
+- Scaffold N50, L50, L90
+- Gap percentage, scaffold count
+- Chromosome-level status
+- Assembly size accuracy
+- Derived metrics (efficiency ratios, concentration scores)
+
+**Exclude**: Genome characteristics
+- Heterozygosity, repeat content (intrinsic properties)
+- Contig-based metrics (pre-curation)
+
+### Statistical Testing Pattern
+Use non-parametric methods for non-normal distributions:
+- **Continuous metrics**: Mann-Whitney U test
+- **Categorical metrics**: Chi-square test (or Fisher's exact if n<5)
+- **Handle failures gracefully**:
+  ```python
+  try:
+      chi2, pval, dof, expected = stats.chi2_contingency(table)
+      stats_text = f'p = {pval:.3e}'
+  except ValueError:
+      stats_text = 'N/A (insufficient variation)'
+  ```
+
+### Missing Data Handling
+Always check for data availability before plotting:
+```python
+if len(data_dual) == 0 or len(data_prialt) == 0:
+    ax.text(0.5, 0.5, 'Insufficient data available',
+           transform=ax.transAxes, ha='center', va='center')
+    return
+```
+
+This prevents crashes when metrics like QV are sparsely populated.
+
+### Incremental Script Development
+
+When building analysis scripts with many (10+) plotting functions:
+
+1. **Start with core functions** (01-06): Basic metrics
+2. **Add advanced functions** (07-11): Computed metrics
+3. **Test incrementally** - Run after each batch
+4. **Update main() function** to call new plots
+5. **Update summary statistics** in output
+
+**Critical**: Always update main() when adding new functions:
+```python
+def main():
+    df = load_data()
+
+    # Basic metrics (01-06)
+    plot_metric_1(df)
+    plot_metric_2(df)
+
+    # NEW: Advanced metrics (07-08)  <- Add these
+    plot_metric_7(df)
+    plot_metric_8(df)
+
+    # Update count in summary
+    print(f"Generated {8} figures")  # <- Update count
+```
+
+Forgetting to call new functions means they're defined but never executed.
 
 ## Tool-Level Resource Optimization
 
