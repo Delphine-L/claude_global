@@ -131,6 +131,47 @@ print(f'New heterozygosity range: {min(vals):.2f}% - {max(vals):.2f}%')
 
 **Document clearly** in plot titles and code comments which outlier removal is applied.
 
+
+###IQR-Based Outlier Removal for Visualization
+
+**Standard Method**: 1.5×IQR (Interquartile Range)
+
+**Implementation**:
+```python
+# Calculate IQR
+Q1 = data.quantile(0.25)
+Q3 = data.quantile(0.75)
+IQR = Q3 - Q1
+
+# Define outlier boundaries (standard: 1.5×IQR)
+lower_bound = Q1 - 1.5*IQR
+upper_bound = Q3 + 1.5*IQR
+
+# Filter outliers
+outlier_mask = (data >= lower_bound) & (data <= upper_bound)
+data_filtered = data[outlier_mask]
+n_outliers = (~outlier_mask).sum()
+
+# IMPORTANT: Report outliers removed
+print(f"Removed {n_outliers} outliers for visualization")
+# Add to figure: f"({n_outliers} outliers removed)"
+```
+
+**Multi-dimensional Outlier Removal**:
+```python
+# For scatter plots with two dimensions (e.g., size ratio AND absolute size)
+outlier_mask = (
+    (ratio >= Q1_ratio - 1.5*IQR_ratio) &
+    (ratio <= Q3_ratio + 1.5*IQR_ratio) &
+    (size >= Q1_size - 1.5*IQR_size) &
+    (size <= Q3_size + 1.5*IQR_size)
+)
+```
+
+**Best Practice**: Always report number of outliers removed in figure statistics or caption.
+
+**When to Use**: For visualization clarity when extreme values compress the main distribution. Not for removing "bad" data - use for display only.
+
 ## Statistical Rigor
 
 ### Required for Correlation Analyses
@@ -154,7 +195,116 @@ print(f'New heterozygosity range: {min(vals):.2f}% - {max(vals):.2f}%')
            transform=ax.transAxes, ...)
    ```
 
+
+### Adding Mann-Whitney U Tests to Figures
+
+**When to Use**: Comparing continuous metrics between two groups (e.g., Dual vs Pri/alt curation)
+
+**Standard Implementation**:
+```python
+from scipy import stats
+
+# Calculate test
+data_group1 = df[df['group'] == 'Group1']['metric']
+data_group2 = df[df['group'] == 'Group2']['metric']
+
+if len(data_group1) > 0 and len(data_group2) > 0:
+    stat, pval = stats.mannwhitneyu(data_group1, data_group2, alternative='two-sided')
+else:
+    pval = np.nan
+
+# Add to stats text
+if not np.isnan(pval):
+    stats_text += f"\nMann-Whitney p: {pval:.2e}"
+```
+
+**Display in Figures**: Include p-value in statistics box with format `Mann-Whitney p: 1.23e-04`
+
+**Consistency**: Ensure all quantitative comparison figures include this test for statistical rigor.
+
 ## Large-Scale Analysis Structure
+
+### Control Analyses: Checking for Confounding
+
+When comparing methods (e.g., Method A vs Method B), always check if observed differences could be explained by characteristics of the samples rather than the methods themselves.
+
+**Critical control analysis**:
+```python
+import pandas as pd
+from scipy import stats
+
+def check_confounding(df, method_col, characteristics):
+    """
+    Compare sample characteristics between methods to check for confounding.
+    
+    Args:
+        df: DataFrame with samples
+        method_col: Column indicating method ('Method_A', 'Method_B')
+        characteristics: List of column names to compare
+    
+    Returns:
+        DataFrame with statistical comparison
+    """
+    results = []
+    
+    for char in characteristics:
+        # Get data for each method
+        method_a = df[df[method_col] == 'Method_A'][char].dropna()
+        method_b = df[df[method_col] == 'Method_B'][char].dropna()
+        
+        if len(method_a) < 5 or len(method_b) < 5:
+            continue
+        
+        # Statistical test
+        stat, pval = stats.mannwhitneyu(method_a, method_b, alternative='two-sided')
+        
+        # Calculate effect size (% difference in medians)
+        pooled_median = pd.concat([method_a, method_b]).median()
+        effect_pct = (method_a.median() - method_b.median()) / pooled_median * 100
+        
+        results.append({
+            'Characteristic': char,
+            'Method_A_median': method_a.median(),
+            'Method_A_n': len(method_a),
+            'Method_B_median': method_b.median(),
+            'Method_B_n': len(method_b),
+            'p_value': pval,
+            'effect_pct': effect_pct,
+            'significant': pval < 0.05
+        })
+    
+    return pd.DataFrame(results)
+
+# Example usage
+characteristics = ['genome_size', 'gc_content', 'heterozygosity', 
+                  'repeat_content', 'sequencing_coverage']
+
+confounding_check = check_confounding(df, 'curation_method', characteristics)
+print(confounding_check)
+```
+
+**Interpretation guide**:
+- **No significant differences**: Methods compared equivalent samples → valid comparison
+- **Method A has "easier" samples** (smaller genomes, lower complexity): Quality differences may be due to sample properties, not method
+- **Method A has "harder" samples** (larger genomes, higher complexity): Strengthens conclusion that Method A is better despite challenges
+- **Limited data** (n<10): Cannot rule out confounding, note as limitation
+
+**Present in notebook**:
+```markdown
+## Genome Characteristics Comparison
+
+**Control Analysis**: Are quality differences due to method or sample properties?
+
+[Table comparing characteristics]
+
+**Conclusion**: 
+- If no differences → Valid method comparison
+- If Method A works with harder samples → Strengthens conclusions
+- If Method A works with easier samples → Potential confounding
+```
+
+**Why critical**: Reviewers will ask this question. Preemptive control analysis demonstrates scientific rigor and prevents major revisions.
+
 
 ### Organizing 60+ Cell Notebooks
 
@@ -235,6 +385,173 @@ Standard settings:
 - Grid: `alpha=0.3, linestyle='--'`
 - Point size: Proportional to sample count (`s=[50 + count*20 for count in counts]`)
 - Colormap: 'viridis' for workflow counts
+
+
+### Publication-Ready Font Sizes
+
+**Problem**: Default matplotlib fonts are designed for screen viewing, not print publication.
+
+**Solution**: Use larger, bold fonts for print readability.
+
+**Recommended sizes** (for standard 10-12 cm wide figures):
+
+| Element | Default | Publication | Code |
+|---------|---------|-------------|------|
+| **Title** | 11-12pt | **18pt** (bold) | `fontsize=18, fontweight='bold'` |
+| **Axis labels** | 10-11pt | **16pt** (bold) | `fontsize=16, fontweight='bold'` |
+| **Tick labels** | 9-10pt | **14pt** | `tick_params(labelsize=14)` |
+| **Legend** | 8-10pt | **12pt** | `legend(fontsize=12)` |
+| **Annotations** | 8-10pt | **11-13pt** | `fontsize=12` |
+| **Data points** | 20-36 | **60-100** | `s=80` (scatter) |
+
+**Implementation example**:
+```python
+fig, ax = plt.subplots(figsize=(10, 8))
+
+# Plot data
+ax.scatter(x, y, s=80, alpha=0.6)  # Larger points
+
+# Titles and labels - BOLD
+ax.set_title('Your Title Here', fontsize=18, fontweight='bold')
+ax.set_xlabel('X Axis Label', fontsize=16, fontweight='bold')
+ax.set_ylabel('Y Axis Label', fontsize=16, fontweight='bold')
+
+# Tick labels
+ax.tick_params(axis='both', which='major', labelsize=14)
+
+# Legend
+ax.legend(fontsize=12, loc='best')
+
+# Stats box
+stats_text = "Statistics:\nMean: 42.5"
+ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+       fontsize=13, family='monospace',
+       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.3))
+
+# Reference lines - thicker
+ax.axhline(y=1.0, linewidth=2.5, linestyle='--', alpha=0.6)
+```
+
+**Quick check**: If you have to squint to read the figure on screen at 100% zoom, fonts are too small for print.
+
+**Special cases**:
+- Multi-panel figures: Increase 10-15% more
+- Posters: Increase 50-100% more
+- Presentations: Increase 30-50% more
+
+### Accessibility: Colorblind-Safe Palettes
+
+**Problem**: Standard color schemes (green vs blue, red vs green) are difficult or impossible to distinguish for people with color vision deficiencies, affecting ~8% of males and ~0.5% of females.
+
+**Solution**: Use colorblind-safe palettes from validated sources.
+
+**IBM Color Blind Safe Palette (Recommended)**:
+```python
+# For comparing two groups/conditions
+colors = {
+    'Group_A': '#0173B2',  # Blue
+    'Group_B': '#DE8F05'   # Orange
+}
+```
+
+**Why this works**:
+- ✅ Maximum contrast for all color vision types (deuteranopia, protanopia, tritanopia, achromatopsia)
+- ✅ Professional appearance for scientific publications
+- ✅ Clear distinction even in grayscale printing
+- ✅ Cultural neutrality (no red/green traffic light associations)
+
+**Other colorblind-safe combinations**:
+- Blue + Orange (best overall)
+- Blue + Red (good for most types)
+- Blue + Yellow (good but lower contrast)
+
+**Avoid**:
+- ❌ Green + Red (most common color blindness)
+- ❌ Green + Blue (confusing for many)
+- ❌ Blue + Purple (too similar)
+
+**Implementation in matplotlib**:
+```python
+import matplotlib.pyplot as plt
+
+# Define colorblind-safe palette
+CB_COLORS = {
+    'blue': '#0173B2',
+    'orange': '#DE8F05',
+    'green': '#029E73',
+    'red': '#D55E00',
+    'purple': '#CC78BC',
+    'brown': '#CA9161'
+}
+
+# Use in plots
+plt.scatter(x, y, color=CB_COLORS['blue'], label='Treatment')
+plt.scatter(x2, y2, color=CB_COLORS['orange'], label='Control')
+```
+
+**Testing your colors**:
+- Use online simulators: https://www.color-blindness.com/coblis-color-blindness-simulator/
+- Check in grayscale: Convert figure to grayscale to ensure distinguishability
+
+### Handling Severe Data Imbalance in Comparisons
+
+**Problem**: Comparing groups with very different sample sizes (e.g., 84 vs 10) can lead to misleading conclusions.
+
+**Solution**: Add prominent warnings both visually and in documentation.
+
+**Visual warning on figure**:
+```python
+import matplotlib.pyplot as plt
+
+# After creating your plot
+n_group_a = len(df[df['group'] == 'A'])
+n_group_b = len(df[df['group'] == 'B'])
+total_a = 200
+total_b = 350
+
+warning_text = f"⚠️  DATA LIMITATION\n"
+warning_text += f"Data availability:\n"
+warning_text += f"  Group A: {n_group_a}/{total_a} ({n_group_a/total_a*100:.1f}%)\n"
+warning_text += f"  Group B: {n_group_b}/{total_b} ({n_group_b/total_b*100:.1f}%)\n"
+warning_text += f"Severe imbalance limits\nstatistical comparability"
+
+ax.text(0.98, 0.02, warning_text, transform=ax.transAxes,
+       fontsize=11, verticalalignment='bottom', horizontalalignment='right',
+       bbox=dict(boxstyle='round', facecolor='red', alpha=0.2, 
+                edgecolor='red', linewidth=2),
+       family='monospace', color='darkred', fontweight='bold')
+
+# Update title to indicate limitation
+ax.set_title('Your Title\n(SUPPLEMENTARY - Limited Data Availability)', 
+            fontsize=14, fontweight='bold')
+```
+
+**Text warning in notebook/paper**:
+```markdown
+**⚠️ CRITICAL DATA LIMITATION**: This figure suffers from severe data availability bias:
+- Group A: 84/200 (42%)
+- Group B: 10/350 (3%)
+
+This **8-fold imbalance** severely limits statistical comparability. The 10 Group B 
+samples are unlikely to be representative of all 350. 
+
+**Interpretation**: Comparisons should be interpreted with extreme caution. This 
+figure is provided for completeness but should be considered **supplementary**.
+```
+
+**Guidelines for sample size imbalance**:
+- **< 2× imbalance**: Generally acceptable, note in caption
+- **2-5× imbalance**: Add note about limitations
+- **> 5× imbalance**: Add prominent warnings (visual + text)
+- **> 10× imbalance**: Consider excluding figure or supplementary-only
+
+**Alternative**: If possible, subset the larger group to match sample size:
+```python
+# Random subset to balance groups
+if n_group_a > n_group_b * 2:
+    group_a_subset = df[df['group'] == 'A'].sample(n=n_group_b * 2, random_state=42)
+    # Use subset for balanced comparison
+```
 
 ## Creating Analysis Notebooks for Scientific Publications
 
@@ -533,6 +850,41 @@ with open('notebook.ipynb', 'w') as f:
     json.dump(notebook, f, indent=1)
 ```
 
+
+### Synchronizing Figure Code and Notebook Documentation
+
+**Pattern**: Code changes to figure generation → Must update notebook text
+
+**Common Scenario**: Updated figure filtering/outlier removal/statistical tests
+
+**Workflow**:
+1. Update figure generation Python script
+2. Regenerate figures
+3. **CRITICAL**: Update Jupyter notebook markdown cells documenting the figure
+4. Use `NotebookEdit` tool (NOT `Edit` tool) for `.ipynb` files
+
+**Example**:
+```python
+# After adding Mann-Whitney test to figure generation:
+NotebookEdit(
+    notebook_path="/path/to/notebook.ipynb",
+    cell_id="cell-14",  # Found via grep or Read
+    cell_type="markdown",
+    new_source="Updated description mentioning Mann-Whitney test..."
+)
+```
+
+**Finding Figure Cells**:
+```bash
+# Locate figure references
+grep -n "figure_name.png" notebook.ipynb
+
+# Or use Glob + Grep
+grep -n "Figure 4" notebook.ipynb
+```
+
+**Why Critical**: Outdated documentation causes confusion. Notebook text saying "Limited data" when data is now complete, or not mentioning new statistical tests, misleads readers.
+
 ## Best Practices Summary
 
 1. **Always check data availability** before creating analyses
@@ -545,3 +897,41 @@ with open('notebook.ipynb', 'w') as f:
 8. **Organize with markdown headers** for navigation
 9. **Test with small datasets** before running full analyses
 10. **Save intermediate results** for expensive computations
+
+## Common Tasks
+
+### Removing Panels from Multi-Panel Figures
+
+**Scenario**: Convert 2-panel figure to 1-panel after removing unavailable data.
+
+**Steps**:
+1. **Update subplot layout**:
+   ```python
+   # Before: 2 panels
+   fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+   
+   # After: 1 panel
+   fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+   ```
+
+2. **Remove panel code**: Delete all code for removed panel (ax2)
+
+3. **Update figure filename**:
+   ```python
+   # Before
+   plt.savefig('06_scaffold_l50_l90_comparison.png')
+   
+   # After
+   plt.savefig('06_scaffold_l50_comparison.png')
+   ```
+
+4. **Update notebook references**:
+   - Image display: `display(Image(...'06_scaffold_l50_comparison.png'))`
+   - Title: Remove references to removed data
+   - Description: Add note about why panel is excluded
+
+5. **Clean up old files**:
+   ```bash
+   rm figures/*_l50_l90_*.png
+   ```
+

@@ -786,6 +786,92 @@ When user says "the outlier is still there":
 
 This pattern prevents major errors where edits are applied to the wrong file for multiple iterations.
 
+
+## Data Quality Validation and Filtering
+
+### GenomeScope Data Validation
+
+**Critical Issue**: VGP Phase 1 dataset contains placeholder values where `genome_size_genomescope == total_length` (assembly size copied into GenomeScope column).
+
+**Detection and Filtering**:
+```python
+# Filter out fake GenomeScope values
+df_filtered = df[(df['total_length'].notna()) &
+                 (df['genome_size_genomescope'].notna()) &
+                 (df['genome_size_genomescope'] != df['total_length'])].copy()
+
+# Report filtering statistics
+n_total = len(df[df['genome_size_genomescope'].notna()])
+n_fake = len(df[(df['genome_size_genomescope'].notna()) &
+                (df['genome_size_genomescope'] == df['total_length'])])
+n_real = len(df_filtered)
+
+print(f"Total with GenomeScope: {n_total}")
+print(f"Fake (copied): {n_fake} ({n_fake/n_total*100:.1f}%)")
+print(f"Real estimates: {n_real} ({n_real/n_total*100:.1f}%)")
+```
+
+**Impact**: In VGP Phase 1, 396/545 (72.7%) GenomeScope values were fake, leaving only 149 (27.3%) real independent estimates.
+
+**Visual Detection**: Scatter plots showing all points on diagonal (assembly = expected) indicate circular data.
+
+**Best Practice**: Always validate that "expected" genome size values are independent from assembly size before comparative analysis.
+
+## Meryl K-mer Database Management
+
+### Accessing Meryl Histograms for GenomeScope
+
+**Key Insight**: GenomeScope only needs histogram files (`.hist`), not full meryl databases.
+
+**File Structure on GenomeArk S3**:
+```
+s3://genomeark/species/{species}/{tolid}/assembly_*/intermediates/meryl/
+├── {tolid}.cut.meryl.hist          # ~700KB - THIS IS WHAT YOU NEED
+└── {tolid}.cut.meryl/              # Many GB - full database
+    ├── 0x000000.merylData
+    ├── 0x000000.merylIndex
+    └── ...
+```
+
+**Direct Histogram URLs** (for Galaxy import):
+```bash
+# Pattern:
+https://genomeark.s3.amazonaws.com/species/{species}/{tolid}/path/to/meryl/{tolid}.cut.meryl.hist
+
+# Example:
+https://genomeark.s3.amazonaws.com/species/Rhinolophus_ferrumequinum/mRhiFer1/assembly_vgp_standard_1.0/intermediates/meryl/mRhiFer1.cut.meryl.hist
+```
+
+**Benefits**:
+- 1000x smaller download (~700KB vs ~10GB)
+- Can import directly into Galaxy via URL
+- No need to download full meryl database
+- Much faster for batch GenomeScope analysis
+
+**Common Mistake**: Downloading entire meryl directory when only `.hist` file is needed.
+
+## Assembly Size vs Expected Genome Size Interpretation
+
+### Common Pattern: Assemblies ~12% Larger Than Expected
+
+**Typical Statistics** (from real VGP data, n=149):
+- Mean ratio (assembly/expected): 1.116  
+- Median ratio: 1.077
+- Within ±10%: ~58%
+- Within ±20%: ~88%
+
+**Why Assemblies Are Larger**:
+1. **Incomplete haplotig purging**: Haplotype-specific sequences retained in primary
+2. **GenomeScope underestimation**: High heterozygosity/repeats affect k-mer frequencies
+3. **Organellar DNA**: Mitochondrial genomes (~15-20kb) assembled and included
+
+**Interpretation**:
+- Ratio 1.0-1.2: Normal, good assembly
+- Ratio > 1.3: Possible retained duplications, check purge_dups metrics
+- Ratio < 0.9: Possible missing sequence, check coverage
+
+**Not a Quality Problem**: Moderate scatter (std dev ~30%) reflects biological variation and k-mer estimation limitations, not assembly quality issues.
+
 ## References
 - [VGP Galaxy Workflows](https://github.com/Delphine-L/iwc/tree/VGP)
 - [Vertebrate Genome Project](https://vertebrategenomesproject.org/)
