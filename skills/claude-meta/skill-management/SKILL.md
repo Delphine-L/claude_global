@@ -645,6 +645,46 @@ git commit -m "fix stuff"
 
 ## Troubleshooting
 
+### Broken Symlinks (Renamed or Moved Skills/Commands)
+
+**Symptom:** Symlink exists but points to non-existent file (renamed or moved in `$CLAUDE_METADATA`)
+
+**Detection:**
+```bash
+# Detect broken skill symlinks
+for skill in .claude/skills/*; do
+  if [ -L "$skill" ] && [ ! -e "$skill" ]; then
+    echo "BROKEN: $skill -> $(readlink "$skill")"
+  fi
+done
+
+# Detect broken command symlinks
+for cmd in .claude/commands/*; do
+  if [ -L "$cmd" ] && [ ! -e "$cmd" ]; then
+    echo "BROKEN: $cmd -> $(readlink "$cmd")"
+  fi
+done
+```
+
+**Common causes:**
+- Command renamed (e.g., `exit.md` → `safe-exit.md`)
+- Skill reorganized in `$CLAUDE_METADATA`
+- Skill deleted from central repository
+
+**Fix:**
+```bash
+# Remove broken symlink
+rm .claude/commands/old-name.md
+
+# Add new symlink
+ln -s $CLAUDE_METADATA/commands/global/new-name.md .claude/commands/new-name.md
+
+# Verify
+ls -la .claude/commands/ | grep new-name
+```
+
+**Prevention:** Use `/sync-skills` regularly to detect and fix broken symlinks automatically
+
 ### Skill Not Activating
 
 **Check 1: Verify symlink exists**
@@ -653,10 +693,14 @@ ls -la .claude/skills/
 # Should show: skill-name -> $CLAUDE_METADATA/skills/skill-name
 ```
 
-**Check 2: Verify target exists**
+**Check 2: Verify target exists (detect broken symlink)**
 ```bash
 ls -L .claude/skills/skill-name
 # Should show: SKILL.md
+# If error: broken symlink - target doesn't exist
+
+# Or use this check:
+test -e .claude/skills/skill-name && echo "OK" || echo "BROKEN SYMLINK"
 ```
 
 **Check 3: Check frontmatter**

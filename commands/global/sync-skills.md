@@ -18,12 +18,29 @@ ls -la .claude/skills/ 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
 ls -la .claude/commands/ 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
 ```
 
+**Detect broken symlinks (CRITICAL - always check this):**
+```bash
+# Check for broken skill symlinks
+for skill in .claude/skills/* 2>/dev/null; do
+  if [ -L "$skill" ] && [ ! -e "$skill" ]; then
+    echo "BROKEN SKILL: $skill -> $(readlink "$skill")"
+  fi
+done
+
+# Check for broken command symlinks
+for cmd in .claude/commands/* 2>/dev/null; do
+  if [ -L "$cmd" ] && [ ! -e "$cmd" ]; then
+    echo "BROKEN COMMAND: $cmd -> $(readlink "$cmd")"
+  fi
+done
+```
+
 **Extract names of currently linked skills and commands:**
 ```bash
-# Skill names
+# Skill names (only working symlinks)
 current_skills=$(ls .claude/skills/ 2>/dev/null | sort)
 
-# Command names
+# Command names (only working symlinks)
 current_commands=$(ls .claude/commands/ 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.md$//' | sort)
 ```
 
@@ -60,12 +77,22 @@ ls $CLAUDE_METADATA/commands/*/ 2>/dev/null | xargs -n1 basename | sed 's/\.md$/
 
 ## Currently Linked
 
-### Global Skills ✅
-- token-efficiency (v1.3.0)
-- claude-collaboration (v1.0.0)
-- galaxy-automation (v1.0.0)
+### Essential Global Skills ✅
+Claude Meta:
+- token-efficiency (v1.4.0)
+- collaboration (v1.0.0)
 
-### Project Skills ✅
+Project Management:
+- folder-organization (v1.0.0)
+- managing-environments (v1.1.0)
+- obsidian (v1.0.0)
+- data-backup (v2.0.0)
+
+Collaboration:
+- hackmd
+- project-sharing (v1.1.0)
+
+### Project-Specific Skills ✅
 - vgp-pipeline (v2.0.0)
 - galaxy-tool-wrapping (v1.0.0)
 
@@ -79,8 +106,8 @@ ls $CLAUDE_METADATA/commands/*/ 2>/dev/null | xargs -n1 basename | sed 's/\.md$/
 
 ## NEW Skills Available 🆕
 
-### Global Skills
-- ❌ None - all global skills already linked ✅
+### Essential Global Skills
+- ❌ None - all essential skills already linked ✅
 
 ### Project-Specific Skills
 - **conda-recipe** (v1.0.0)
@@ -107,9 +134,22 @@ Based on this project's structure, I recommend:
 1. **Essential (if missing):**
    ```bash
    # These should be in EVERY project
-   ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
-   ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude-collaboration
-   ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-automation
+
+   # Claude Meta
+   ln -s $CLAUDE_METADATA/skills/claude-meta/token-efficiency .claude/skills/token-efficiency
+   ln -s $CLAUDE_METADATA/skills/claude-meta/collaboration .claude/skills/collaboration
+
+   # Project Management
+   ln -s $CLAUDE_METADATA/skills/project-management/folder-organization .claude/skills/folder-organization
+   ln -s $CLAUDE_METADATA/skills/project-management/managing-environments .claude/skills/managing-environments
+   ln -s $CLAUDE_METADATA/skills/project-management/obsidian .claude/skills/obsidian
+   ln -s $CLAUDE_METADATA/skills/project-management/data-backup .claude/skills/data-backup
+
+   # Collaboration
+   ln -s $CLAUDE_METADATA/skills/collaboration/hackmd .claude/skills/hackmd
+   ln -s $CLAUDE_METADATA/skills/collaboration/project-sharing .claude/skills/project-sharing
+
+   # Global commands
    ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
    ```
 
@@ -224,25 +264,61 @@ Would you like me to run /setup-project instead?
 Your project has all available skills and commands that are relevant.
 
 Current setup:
-- 2 global skills ✅
-- X project skills ✅
+- 8 essential global skills ✅
+- X project-specific skills ✅
 - Y commands ✅
 
 No new skills or commands available.
 ```
 
 ### Broken Symlinks
+
+**When you detect broken symlinks, ALWAYS:**
+1. Report them clearly to the user
+2. Check `$CLAUDE_METADATA` for renamed/moved files
+3. Offer to fix automatically (remove old + add new)
+4. Provide manual fix commands as backup
+
+**Example output:**
 ```
 ⚠️  Found broken symlinks:
 
-.claude/skills/old-skill → $CLAUDE_METADATA/skills/old-skill (NOT FOUND)
+Commands:
+- exit.md → /path/to/claude_global/commands/global/exit.md (NOT FOUND)
+  └─ Likely renamed to: safe-exit.md ✓ (detected in $CLAUDE_METADATA)
 
-These skills may have been renamed or removed.
+These symlinks point to files that have been renamed or removed.
 
-Recommended actions:
-1. Remove broken symlink: `rm .claude/skills/old-skill`
-2. Check if skill was renamed
-3. Run /list-skills to see current skills
+Recommended fix:
+1. Remove broken symlink: rm .claude/commands/exit.md
+2. Add new symlink: ln -s $CLAUDE_METADATA/commands/global/safe-exit.md .claude/commands/safe-exit.md
+
+Would you like me to fix this automatically?
+```
+
+**Common rename patterns to check:**
+- Commands in `global/` that may have been renamed
+- Skills that moved to subdirectories (e.g., `vgp-pipeline` → `bioinformatics/vgp-pipeline`)
+- Skills split or merged
+
+**Auto-detection strategy:**
+```bash
+# For broken command symlink "exit.md"
+# 1. Extract base name: "exit"
+# 2. Search for similar names in $CLAUDE_METADATA/commands/global/
+# 3. Check for: safe-exit.md, exit-*.md, *-exit.md
+# 4. Suggest most likely match
+
+# Example:
+ls $CLAUDE_METADATA/commands/global/ | grep -i "exit"
+# Output: safe-exit.md
+# Suggestion: "Likely renamed from exit.md to safe-exit.md"
+```
+
+**After fixing broken symlinks, verify:**
+```bash
+# Ensure no more broken links
+test -e .claude/commands/safe-exit.md && echo "✓ Fixed" || echo "✗ Still broken"
 ```
 
 ## Token Efficiency
