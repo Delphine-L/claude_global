@@ -1,7 +1,7 @@
 ---
 name: bioinformatics-fundamentals
-description: Core bioinformatics concepts including SAM/BAM format, sequencing technologies (Hi-C, HiFi, Illumina), quality metrics, and common data processing patterns. Essential for debugging alignment, filtering, and pairing issues.
-version: 1.0.0
+description: Core bioinformatics concepts including SAM/BAM format, AGP genome assembly format, sequencing technologies (Hi-C, HiFi, Illumina), quality metrics, and common data processing patterns. Essential for debugging alignment, filtering, pairing issues, and AGP coordinate validation.
+version: 1.1.0
 ---
 
 # Bioinformatics Fundamentals
@@ -12,6 +12,8 @@ Foundation knowledge for genomics and bioinformatics workflows. Provides essenti
 
 - Working with sequencing data (PacBio HiFi, Hi-C, Illumina)
 - Debugging SAM/BAM alignment or filtering issues
+- Processing AGP files for genome assembly curation
+- Validating AGP coordinate systems and unloc assignments
 - Understanding paired-end vs single-end data
 - Interpreting quality metrics (MAPQ, PHRED scores)
 - Troubleshooting empty outputs or broken read pairs
@@ -395,6 +397,17 @@ chr1    1000    2000    feature_name    score    +
 - Used for regions, features, intervals
 - Minimum 3 columns (chrom, start, end)
 
+### AGP
+```
+chr1    1    5000    1    W    contig_1    1    5000    +
+chr1    5001 5100    2    U    100    scaffold    yes    proximity_ligation
+```
+- Tab-delimited genome assembly format
+- 1-based closed coordinates [start, end]
+- Describes construction of objects from components
+- Object and component lengths must match
+- See AGP Format section for complete specification
+
 ## Best Practices
 
 ### General
@@ -697,6 +710,304 @@ GCA_XXXXXX,12345,Species name,80,40,Brief description,https://doi.org/...
 - Recently described species
 - Cryptic species complexes
 
+## AGP Format (A Golden Path)
+
+### Overview
+AGP (A Golden Path) format describes how assembled sequences (chromosomes, scaffolds) are constructed from component sequences (contigs, scaffolds) and gaps. Critical for genome assembly curation and submission to NCBI/EBI.
+
+### When to Use This Knowledge
+
+- Processing genome assemblies for submission to databases
+- Curating chromosome-level assemblies
+- Splitting haplotype assemblies
+- Assigning unlocalized scaffolds (unlocs)
+- Debugging AGP validation errors
+- Converting between assembly representations
+
+### AGP Format Structure
+
+**Tab-delimited format with 9 columns for sequence lines (type W) or 8+ columns for gap lines (type U/N)**
+
+**Sequence Lines (Column 5 = 'W'):**
+```
+object  obj_beg  obj_end  part_num  W  component_id  comp_beg  comp_end  orientation
+```
+
+**Gap Lines (Column 5 = 'U' or 'N'):**
+```
+object  obj_beg  obj_end  part_num  gap_type  gap_length  gap_type  linkage  linkage_evidence
+```
+
+### Critical Coordinate Rules
+
+**Rule 1: Object and Component Lengths MUST Match**
+
+For sequence lines, the span in the object MUST equal the span in the component:
+```
+(obj_end - obj_beg + 1) == (comp_end - comp_beg + 1)
+```
+
+**Example - CORRECT:**
+```
+Scaffold_47_unloc_1  1  54360  1  W  scaffold_23.hap1  19274039  19328398  -
+# Object length: 54360 - 1 + 1 = 54,360 bp
+# Component length: 19328398 - 19274039 + 1 = 54,360 bp ✓
+```
+
+**Example - INCORRECT:**
+```
+Scaffold_47_unloc_1  1  19328398  1  W  scaffold_23.hap1  19274039  19328398  -
+# Object length: 19328398 - 1 + 1 = 19,328,398 bp
+# Component length: 19328398 - 19274039 + 1 = 54,360 bp ✗
+# ERROR: Lengths don't match!
+```
+
+**Rule 2: Component Numbering Restarts for New Objects**
+
+Each object (column 1) has its own component numbering (column 4) starting at 1:
+```
+Scaffold_10         1  30578279  1  W  scaffold_4.hap2   1  30578279  -
+Scaffold_10_unloc_1 1  65764     1  W  scaffold_74.hap2  1  65764     +  # ← Starts at 1, not 3!
+```
+
+**Rule 3: Sequential Component Numbering Within Objects**
+
+Component numbers increment sequentially (gaps and sequences both count):
+```
+Scaffold_2  1        1731008   1  W  scaffold_25.hap1  1  1731008  -
+Scaffold_2  1731009  1731108   2  U  100  scaffold  yes  proximity_ligation
+Scaffold_2  1731109  1956041   3  W  scaffold_70.hap1  1  224933   -
+```
+
+### Common AGP Processing Issues
+
+#### Issue 1: Incorrect Object Coordinates When Creating Unlocs
+
+**Symptom:**
+```
+ERROR: object coordinates (1, 19328398) and component coordinates (19274039, 19328398)
+do not have the same length
+```
+
+**Cause:**
+When converting a region of a scaffold into an unlocalized sequence (unloc), the object coordinates must represent the **length** of the extracted region, not the original component end coordinate.
+
+**Wrong Approach:**
+```python
+# Setting object end to component end coordinate
+agp_df.loc[index, 'chr_end'] = agp_df.loc[index, 'scaff_end']  # ✗ WRONG
+```
+
+**Correct Approach:**
+```python
+# Calculate actual length from component coordinates
+agp_df.loc[index, 'chr_end'] = int(agp_df.loc[index, 'scaff_end']) - int(agp_df.loc[index, 'scaff_start']) + 1  # ✓ CORRECT
+```
+
+#### Issue 2: Component Numbering Not Reset for New Objects
+
+**Symptom:**
+Unloc scaffolds have component numbers > 1 when they should start at 1.
+
+**Cause:**
+When creating a new object (unloc scaffold), component numbering wasn't reset.
+
+**Solution:**
+```python
+# When creating unlocs, reset component number
+agp_df.loc[index, '#_scaffs'] = 1  # Column 4: component number
+```
+
+#### Issue 3: AGPcorrect Accumulating Coordinates
+
+**Symptom:**
+Unloc sequences inherit cumulative coordinates from parent scaffolds.
+
+**Cause:**
+AGPcorrect adjusts coordinates based on sequence length corrections. When scaffolds are later split into unlocs, the accumulated corrections need to be recalculated based on actual component spans.
+
+**Solution:**
+Always recalculate object coordinates from component spans when creating new objects (unlocs).
+
+### AGP Processing Best Practices
+
+#### 1. Coordinate System Understanding
+
+- **Object coordinates (columns 2-3):** Position within the assembled object (1-based, inclusive)
+- **Component coordinates (columns 7-8):** Position within the source sequence (1-based, inclusive)
+- Both use **1-based closed intervals** [start, end]
+- Length calculation: `end - start + 1`
+
+#### 2. Creating Unlocalized Sequences (Unlocs)
+
+```python
+# When extracting a region to create an unloc:
+# 1. Calculate the actual length of the region
+length = int(comp_end) - int(comp_start) + 1
+
+# 2. Set object coordinates for the new unloc
+obj_start = 1  # Always starts at 1
+obj_end = length  # Equals the length
+
+# 3. Reset component number
+component_num = 1  # New object, new numbering
+
+# 4. Rename the object
+new_object_name = f"{parent_scaffold}_unloc_{unloc_number}"
+```
+
+#### 3. Validating AGP Files
+
+**Use NCBI's AGP validator:**
+```bash
+agp_validate assembly.agp
+```
+
+**Common validation checks:**
+- Object/component length match
+- Sequential component numbering
+- No coordinate overlaps
+- Gap specifications valid
+- Orientation values (+, -, ?, 0, na)
+
+#### 4. Handling Haplotype-Split Assemblies
+
+When splitting diploid assemblies into haplotypes:
+1. Identify haplotype markers in sequence names (H1/hap1, H2/hap2)
+2. Maintain proper pairing information
+3. Process unlocs separately per haplotype
+4. Remove haplotig duplications
+5. Track gaps appropriately (especially proximity ligation gaps)
+
+### AGP Coordinate Debugging Pattern
+
+When encountering coordinate errors:
+
+```python
+# For each AGP line, verify:
+obj_length = int(obj_end) - int(obj_beg) + 1
+comp_length = int(comp_end) - int(comp_beg) + 1
+
+assert obj_length == comp_length, f"Length mismatch: obj={obj_length}, comp={comp_length}"
+
+# For sequential component numbers:
+assert comp_num == expected_num, f"Component number gap: got {comp_num}, expected {expected_num}"
+```
+
+### AGP File Structure by Assembly Stage
+
+**1. Raw Assembly AGP:**
+- Direct representation from assembler
+- May have incorrect sequence lengths
+- Needs coordinate correction (AGPcorrect)
+
+**2. Corrected AGP:**
+- Sequence lengths match actual FASTA
+- Coordinates adjusted for length discrepancies
+- Ready for haplotype splitting
+
+**3. Haplotype-Split AGP:**
+- Separate files per haplotype
+- Unlocs identified but not separated
+- Haplotigs marked but not removed
+
+**4. Final Curated AGP:**
+- Unlocs separated into individual objects
+- Haplotigs removed to separate file
+- Proximity ligation gaps cleaned
+- Ready for database submission
+
+## BED File Processing and Telomere Analysis
+
+### Pattern: Classifying Scaffolds by Telomere Types
+
+When analyzing telomere data from BED files to classify scaffolds:
+
+**File Structure**:
+- Terminal telomeres BED: columns include scaffold, start, end, orientation (p/q), accession
+- Interstitial telomeres BED: similar structure with position markers (p/q/u for internal)
+
+**Best Practice - Use Python CSV Module**:
+```python
+import csv
+from collections import defaultdict
+
+# Use defaultdict for automatic initialization
+telomere_counts = defaultdict(lambda: {'terminal': 0, 'interstitial': 0})
+
+# Process with csv.reader (more portable than pandas)
+with open('telomeres.bed', 'r') as f:
+    reader = csv.reader(f, delimiter='\t')
+    for row in reader:
+        scaffold = row[0]
+        accession = row[10]  # GCA accession
+        key = (accession, scaffold)
+        telomere_counts[key]['terminal'] += 1
+```
+
+**Why CSV over pandas**:
+- No external dependencies (pandas may not be installed)
+- Faster for simple tabular operations
+- Lower memory footprint for large files
+- Better portability across environments
+
+**Classification Categories**:
+1. Category 1: 2 terminal telomeres, 0 interstitial (complete chromosomes)
+2. Category 2: 1 terminal telomere, 0 interstitial (partial)
+3. Category 3: Has interstitial telomeres (likely assembly issues)
+
+## NCBI Data Integration Strategies
+
+### Check Existing Data Sources Before API Calls
+
+**Problem**: Need chromosome counts for 400+ assemblies from NCBI.
+
+**Anti-pattern**: Query NCBI datasets API for each accession
+```python
+# DON'T: Query 400+ times
+for accession in missing_data:
+    result = subprocess.run(['datasets', 'summary', 'genome', 'accession', accession])
+    # Takes 10+ minutes, hits API rate limits
+```
+
+**Better Pattern**: Check if data already exists in compiled tables
+```python
+# DO: Look for existing compiled data first
+# VGP table has multiple chromosome count columns:
+# - num_chromosomes (column 54)
+# - total_number_of_chromosomes (column 106)
+# - num_chromosomes_haploid (column 122)
+
+# Read from existing comprehensive table
+with open('VGP-table.csv') as f:
+    reader = csv.reader(f)
+    header = next(reader)
+    for row in reader:
+        num_chr = row[53] if row[53] else row[105]  # Fallback strategy
+```
+
+**Results**: Filled 392/417 missing values instantly vs 10+ minutes of API calls.
+
+**Fallback Strategy for Multiple Columns**:
+```python
+# Try multiple sources in order of preference
+num_chromosomes = row[53] if (len(row) > 53 and row[53]) else ''
+if not num_chromosomes and len(row) > 105:
+    num_chromosomes = row[105]  # Alternative column
+```
+
+**When to use NCBI API**:
+- Data not in existing tables
+- Need real-time/latest data
+- Fetching assembly reports or sequence data
+- Small number of queries (<20)
+
+**API Best Practices** (when necessary):
+- Use full path to datasets command (may be aliased)
+- Add delays between calls (`time.sleep(0.5)`)
+- Set reasonable timeouts
+- Handle errors gracefully
+
 ## Related Skills
 
 - **vgp-pipeline** - VGP workflows process Hi-C and HiFi data
@@ -710,4 +1021,6 @@ GCA_XXXXXX,12345,Species name,80,40,Brief description,https://doi.org/...
 
 ## Version History
 
+- **v1.1.1:** Added BED file processing patterns for telomere analysis and NCBI data integration strategies
+- **v1.1.0:** Added comprehensive AGP format documentation including coordinate validation, unloc processing, and common error patterns
 - **v1.0.0:** Initial release with SAM/BAM, Hi-C, HiFi, common filtering patterns

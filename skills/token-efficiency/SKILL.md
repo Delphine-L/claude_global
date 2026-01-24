@@ -351,6 +351,29 @@ Bash: sed -i '' 's|old/path|new/path|g' config.yaml  # Use | as delimiter
 
 **Token savings: 100% of file content**
 
+**macOS vs Linux compatibility:**
+```bash
+# macOS (BSD sed) - requires empty string after -i
+sed -i '' 's/old/new/g' file.txt
+
+# Linux (GNU sed) - no argument needed
+sed -i 's/old/new/g' file.txt
+
+# Cross-platform solution (works everywhere):
+sed -i.bak 's/old/new/g' file.txt && rm file.txt.bak
+# OR detect OS:
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' 's/old/new/g' file.txt
+else
+    sed -i 's/old/new/g' file.txt
+fi
+
+# Portable alternative (no -i flag):
+sed 's/old/new/g' file.txt > file.tmp && mv file.tmp file.txt
+```
+
+**Why this matters:** Scripts using `sed -i` will fail on macOS with cryptic errors like "can't read /pattern/..." if the empty string is omitted. Always use `sed -i ''` for macOS compatibility or `sed -i.bak` for cross-platform safety.
+
 #### Append to Files
 
 ```bash
@@ -580,6 +603,89 @@ Bash: echo "[$(date)] Log entry" >> application.log
 ```
 
 **Savings: 99,950 tokens (99.95%)**
+
+#### Find CSV Column Indices
+
+```bash
+# ❌ DON'T: Read entire CSV file to find column numbers
+Read: large_table.csv (100+ columns, thousands of rows)
+# Then manually count columns
+
+# ✅ DO: Extract and number header row
+Bash: head -1 file.csv | tr ',' '\n' | nl
+
+# ✅ DO: Find specific columns by pattern
+Bash: head -1 VGP-table.csv | tr ',' '\n' | nl | grep -i "chrom"
+# Output shows column numbers and names:
+#  54 num_chromosomes
+# 106 total_number_of_chromosomes
+# 122 num_chromosomes_haploid
+```
+
+**How it works:**
+- `head -1`: Get header row only
+- `tr ',' '\n'`: Convert comma-separated to newlines
+- `nl`: Number the lines (gives column index)
+- `grep -i`: Filter by pattern (case-insensitive)
+
+**Use case**: Quickly identify which columns contain needed data in wide tables (100+ columns).
+
+**Token savings: 100% of file content** - Only see column headers, not data rows.
+
+#### Python Data Filtering Pattern
+
+```bash
+# ✅ Create separate filtered files rather than overwriting
+# Read original
+species_data = []
+with open('data.csv', 'r') as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        if row['accession'] and row['chromosome_count']:  # Filter criteria
+            species_data.append(row)
+
+# Write to NEW file with descriptive suffix
+output_file = 'data_filtered.csv'  # Not 'data.csv'
+with open(output_file, 'w', newline='') as f:
+    writer = csv.DictWriter(f, fieldnames=reader.fieldnames)
+    writer.writeheader()
+    writer.writerows(species_data)
+```
+
+**Benefits:**
+- Preserves original data for comparison
+- Clear naming indicates filtering applied
+- Can generate multiple filtered versions
+- Easier to debug and verify filtering logic
+
+#### Handling Shell Aliases in Python Scripts
+
+**Problem**: Python's `subprocess.run()` doesn't expand shell aliases.
+
+```python
+# ❌ FAILS if 'datasets' is an alias
+subprocess.run(['datasets', 'summary', ...])
+# Error: [Errno 2] No such file or directory: 'datasets'
+```
+
+**Solution**: Use full path to executable
+
+```bash
+# Find full path
+type -a datasets
+# Output: datasets is an alias for ~/Workdir/ncbi_tests/datasets
+
+echo ~/Workdir/ncbi_tests/datasets  # Expand ~
+# Output: /Users/delphine/Workdir/ncbi_tests/datasets
+```
+
+```python
+# Use full path in script
+datasets_cmd = '/Users/delphine/Workdir/ncbi_tests/datasets'
+subprocess.run([datasets_cmd, 'summary', ...])
+```
+
+**Alternative**: Use `shell=True` (but avoid for security reasons with user input)
 
 ---
 
@@ -1864,6 +1970,63 @@ Properly managing background processes:
 - **Prevents context pollution** - Old process output doesn't leak into new sessions
 - **Enables clean handoff** - Resume docs allow fresh session without re-explaining
 - **Avoids redundant work** - Resumable scripts don't repeat completed tasks
+
+---
+
+## Repository Organization for Long Projects
+
+### Problem
+Data enrichment and analysis projects generate many intermediate files, scripts, and logs that clutter the root directory, making it hard to:
+- Find the current working dataset
+- Identify which scripts are actively used
+- Navigate the project structure
+- Maintain focus on important files
+
+### Solution: Organize Early and Often
+
+**Create dedicated subfolders at project start:**
+```bash
+mkdir -p python_scripts/ logs/ tables/
+```
+
+**Organization strategy:**
+- `python_scripts/` - All analysis and processing scripts (16+ scripts in VGP project)
+- `logs/` - All execution logs from script runs (38+ logs in VGP project)
+- `tables/` - Intermediate results, old versions, and archived data
+- Root directory - Only main working dataset and current outputs
+
+**Benefits:**
+- Reduces cognitive load when scanning directory
+- Makes git status cleaner and more readable
+- Easier to exclude intermediate files from version control
+- Faster file navigation with autocomplete
+- Professional project structure for collaboration
+
+**When to organize:**
+- At project start (ideal)
+- After accumulating 5+ scripts or logs (acceptable)
+- Before sharing project with collaborators (essential)
+
+**Example cleanup script:**
+```bash
+# Move all Python scripts
+mkdir -p python_scripts
+mv *.py python_scripts/
+
+# Move all logs
+mkdir -p logs
+mv *.log logs/
+
+# Move intermediate tables (keep main dataset in root)
+mkdir -p tables
+mv *_intermediate.csv *_backup.csv *_old.csv tables/
+```
+
+**Token efficiency impact:**
+- Cleaner `ls` outputs (fewer lines to process)
+- Easier to target specific directories with Glob
+- Reduced cognitive overhead when navigating
+- Faster file location with autocomplete
 
 ---
 
