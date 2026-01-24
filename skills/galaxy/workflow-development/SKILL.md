@@ -565,6 +565,115 @@ After PR merge:
 
 ---
 
+## Writing Methods Sections for Publications
+
+When helping users write methods sections for scientific papers based on Galaxy workflows:
+
+### 1. Workflow Analysis Strategy
+
+**Examine workflow metadata first:**
+```bash
+# Get workflow name and description
+head -30 workflow.ga | grep -E '"name"|"annotation"'
+
+# Extract tool names and versions
+grep -o '"tool_id": "[^"]*"' workflow.ga | sort -u
+
+# Find specific tools (e.g., assemblers)
+grep -o '"tool_id": "[^"]*hifiasm[^"]*"' workflow.ga
+```
+
+**For large workflows (>25000 tokens):**
+- Don't read entire files - they'll exceed token limits
+- Use grep to extract specific information
+- Read only first 100 lines for metadata: `head -100 workflow.ga`
+- Search for tool patterns rather than reading everything
+
+### 2. VGP Workflow Documentation Pattern
+
+For VGP pipeline workflows, document in this order:
+
+1. **Platform and pipeline**: "implemented in Galaxy (cite) using VGP workflows (cite)"
+2. **Data-specific approach**: Distinguish trio vs non-trio methods
+3. **Sequential workflow steps**:
+   - K-mer profiling (Meryl, GenomeScope2)
+   - Assembly (HiFiasm with appropriate mode)
+   - Scaffolding (RagTag with reference)
+   - Quality assessment (BUSCO/Compleasm, Merqury, gfastats)
+4. **Tool versions**: Always include version numbers
+5. **Specific parameters**: Reference genomes, accessions used
+
+### 3. Methods Section Template
+
+```markdown
+Genome assemblies were generated using the [Pipeline Name] workflows (Citation)
+implemented in Galaxy (Galaxy Community, 2024). For [condition A], we employed
+[approach A]: first, [step 1] using [Tool v.X] (Citation), followed by [step 2]
+using [Tool v.Y] (Citation). For [condition B], we performed [approach B]
+using [Tool v.Z] (Citation). All assemblies were [post-processing step] using
+[Tool] with [specific parameter/reference]. Assembly quality was assessed using
+multiple metrics including [Tool A] for [metric type], [Tool B] for [metric type],
+and [Tool C] for [metric type]. [Annotation or downstream analysis] was performed
+using [Tool/Pipeline] (Citation), which [brief description]. [Specific data sources
+with accessions].
+```
+
+### 4. Common VGP Workflow Tool Citations Needed
+
+**Core tools to cite:**
+- Galaxy platform: The Galaxy Community (2024)
+- VGP workflows: Larivière et al. (2024) Nature Biotechnology
+- HiFiasm: Cheng et al. (2021) Nature Methods
+- Meryl: Rhie et al. (2020) Genome Biology
+- GenomeScope2: Ranallo-Benavidez et al. (2020) Nature Communications
+- Merqury: Rhie et al. (2020) Genome Biology
+- BUSCO: Manni et al. (2021) MBE
+- Compleasm: Huang & Li (2023) Bioinformatics
+- RagTag: Alonge et al. (2022) Genome Biology
+- gfastats: Formenti et al. (2022) Bioinformatics
+- EGApX: Thibaud-Nissen et al. (2013) NCBI Handbook
+
+### 5. Key Information to Extract from Workflows
+
+**From workflow annotation field:**
+- Purpose and description
+- Pipeline position (e.g., "Part of VGP suite, run after VGP1")
+
+**From tool_id fields:**
+- Primary assembler (hifiasm, flye, etc.)
+- Scaffolding tool (ragtag, yahs, etc.)
+- QC tools (busco, merqury, etc.)
+
+**From inputs:**
+- Data types required (HiFi, Hi-C, Illumina, trio data)
+- Reference genome requirements
+- RNA-seq accessions for annotation
+
+**From parameters:**
+- K-mer lengths
+- Ploidy settings
+- BUSCO lineages
+- Coverage thresholds
+
+### 6. Workflow File Size Considerations
+
+**Token-efficient workflow analysis:**
+```bash
+# Get file size first
+ls -lh workflow.ga
+
+# For large files (>100K):
+# - Extract metadata only (first 100 lines)
+# - Use grep for specific tools
+# - Read tool documentation instead of entire workflow
+
+# For small files (<100K):
+# - Can read with limit parameter
+# - Still prefer targeted grep when possible
+```
+
+---
+
 ## Related Skills
 
 - **galaxy-tool-wrapping** - Creating Galaxy tools that can be used in workflows

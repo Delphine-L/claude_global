@@ -54,6 +54,59 @@ for i, data in enumerate():   # Shadows 'data'
 for key, data in dict.items() # Shadows 'data'
 ```
 
+### Verify Column Names Before Processing
+
+**Problem**: Assuming column names without checking actual DataFrame structure leads to immediate failures. Column names may use different capitalization, spacing, or naming conventions than expected.
+
+**Example error:**
+```python
+# Assumed column name
+df_filtered = df[df['scientific_name'] == target]  # KeyError!
+
+# Actual column name was 'Scientific Name' (capitalized with space)
+```
+
+**Solution**: Always check actual columns first:
+```python
+import pandas as pd
+df = pd.read_csv('data.csv')
+
+# ALWAYS print columns before processing
+print("Available columns:")
+print(df.columns.tolist())
+
+# Then write filtering code with correct names
+df_filtered = df[df['Scientific Name'] == target_species]  # Correct
+```
+
+**Best practice for data processing scripts:**
+```python
+# At the start of your script
+def verify_required_columns(df, required_cols):
+    """Verify DataFrame has required columns."""
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        print(f"ERROR: Missing columns: {missing}")
+        print(f"Available columns: {df.columns.tolist()}")
+        sys.exit(1)
+
+# Use it
+required = ['Scientific Name', 'tolid', 'accession']
+verify_required_columns(df, required)
+```
+
+**Common column name variations to watch for:**
+- `scientific_name` vs `Scientific Name` vs `ScientificName`
+- `species_id` vs `species` vs `Species ID`
+- `genome_size` vs `Genome size` vs `GenomeSize`
+
+**Debugging tip**: Include column listing in all data processing scripts:
+```python
+# Add at script start for easy debugging
+if '--debug' in sys.argv or len(df.columns) < 10:
+    print(f"Columns ({len(df.columns)}): {df.columns.tolist()}")
+```
+
 ## Outlier Handling Best Practices
 
 ### Two-Stage Outlier Removal
@@ -768,6 +821,81 @@ for inv in data:
 # Create filtered dataset
 data_with_species = [inv for inv in data if inv.get('species_id') and inv.get('genome_size')]
 ```
+
+## Data Backup Strategy
+
+### The Problem
+Long-running data enrichment projects risk:
+- Losing days of work from accidental overwrites
+- Unable to revert to previous data states
+- No documentation of what changed when
+- Running out of disk space from manual backups
+
+### Solution: Automated Two-Tier Backup System
+
+**Architecture:**
+1. **Daily backups** - Rolling 7-day window (auto-cleanup)
+2. **Milestone backups** - Permanent, compressed (gzip ~80% reduction)
+3. **CHANGELOG** - Automatic documentation of all changes
+
+**Implementation:**
+```bash
+# Daily backup (start of each work session)
+./backup_table.sh
+
+# Milestone backup (after major changes)
+./backup_table.sh milestone "added genomescope data for 21 species"
+
+# List all backups
+./backup_table.sh list
+
+# Restore from backup (with safety backup)
+./backup_table.sh restore 2026-01-23
+```
+
+**Directory structure:**
+```
+backups/
+├── daily/              # Rolling 7-day backups (~770KB each)
+│   ├── backup_2026-01-17.csv
+│   └── backup_2026-01-23.csv
+├── milestones/         # Permanent compressed backups (~200KB each)
+│   ├── milestone_2026-01-20_initial_enrichment.csv.gz
+│   └── milestone_2026-01-23_recovered_accessions.csv.gz
+├── CHANGELOG.md        # Auto-generated change log
+└── README.md           # User documentation
+```
+
+**Storage efficiency:**
+- Daily backups: ~5.4 MB (7 days × 770KB)
+- Milestone backups: ~200KB each compressed (80% size reduction)
+- Total: <10 MB for complete project history
+- Old daily backups auto-delete after 7 days
+
+**When to create milestones:**
+- After adding new data sources (GenomeScope, karyotypes, etc.)
+- Before major data transformations
+- When completing analysis sections
+- Before submitting/publishing
+
+**Global installer available:**
+```bash
+# Install backup system in any repository
+install-backup-system -f your_data_file.csv
+```
+
+**Key features:**
+- Never overwrites without confirmation
+- Creates safety backup before restore
+- Complete audit trail in CHANGELOG
+- Color-coded terminal output
+- Handles both CSV and TSV files
+
+**Benefits for data analysis:**
+- **Data provenance** - CHANGELOG documents every modification
+- **Confidence to experiment** - Easy rollback encourages trying approaches
+- **Professional workflow** - Matches publication standards
+- **Collaboration-ready** - Team members can understand data history
 
 ## Debugging Data Availability
 

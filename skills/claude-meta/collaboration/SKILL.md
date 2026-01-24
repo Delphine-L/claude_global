@@ -12,9 +12,39 @@ This skill provides guidance on effectively using Claude Code in team environmen
 
 1. **Skills are living documentation** - They evolve as you learn
 2. **Capture knowledge explicitly** - Claude doesn't auto-update skills
-3. **Share knowledge across the team** - Use global skills for common patterns
-4. **Version control your skills** - Track changes and improvements
-5. **Be intentional about updates** - Not everything learned needs to be captured
+3. **All skills live in $CLAUDE_METADATA** - No local skills or commands in projects
+4. **Share knowledge across the team** - Centralized repo ensures consistency
+5. **Version control your skills** - Track changes and improvements
+6. **Be intentional about updates** - Not everything learned needs to be captured
+
+### Critical: No Local Skills or Commands
+
+**ALL skills and commands MUST be in the $CLAUDE_METADATA repository, never in individual project directories.**
+
+**❌ Never do this:**
+```bash
+# Creating local skill in project
+echo "---" > .claude/skills/my-local-skill/SKILL.md
+```
+
+**✅ Always do this:**
+```bash
+# Create skill in central repo
+mkdir -p $CLAUDE_METADATA/skills/project-name
+echo "---" > $CLAUDE_METADATA/skills/project-name/SKILL.md
+
+# Then symlink to project
+ln -s $CLAUDE_METADATA/skills/project-name .claude/skills/project-name
+```
+
+**Why centralization is mandatory:**
+- **Version control**: All skills tracked in one git repo
+- **Team sharing**: Everyone uses the same knowledge
+- **Consistency**: No divergence between projects
+- **Maintenance**: Update once, applies everywhere
+- **Discovery**: Team can see all available skills
+
+**Even project-specific skills go in the central repo** under `$CLAUDE_METADATA/skills/project-name/`.
 
 ---
 
@@ -166,37 +196,44 @@ Claude: [Analyzes patterns, suggests updates]
 
 ## Skill Organization Patterns
 
-### Pattern 1: Project-Specific Skills
+### Pattern 1: Project-Specific Skills (In Central Repo)
 
 **Use for:**
 - Project-specific knowledge (VGP workflows, Galaxy APIs)
 - Custom tooling and scripts
 - Domain-specific patterns
 
-**Location:** `.claude/skills/` in project directory
+**Location:** `$CLAUDE_METADATA/skills/project-name/` (NOT in project directory)
 
 **Example:**
 ```
+$CLAUDE_METADATA/
+└── skills/
+    ├── my-project/              # Project-specific skill
+    │   └── SKILL.md
+    └── another-project/         # Another project-specific skill
+        └── SKILL.md
+
 my-project/
-├── .claude/
-│   └── skills/
-│       ├── project-architecture.md
-│       ├── deployment-procedures.md
-│       └── troubleshooting.md
+└── .claude/
+    └── skills/
+        └── my-project -> $CLAUDE_METADATA/skills/my-project  # Symlink only!
 ```
 
-### Pattern 2: Global Skills (Cross-Project)
+**Important:** Even project-specific skills live in the central repo and are symlinked to projects.
+
+### Pattern 2: General Skills (Cross-Project)
 
 **Use for:**
 - General development practices
 - Tool-agnostic optimizations (token efficiency)
 - Team-wide standards
 
-**Location:** `$CLAUDE_METADATA/.claude/skills/`
+**Location:** `$CLAUDE_METADATA/skills/`
 
 **Example:**
 ```
-$CLAUDE_METADATA/.claude/skills/
+$CLAUDE_METADATA/skills/
 ├── token-efficiency/
 │   └── SKILL.md
 ├── claude-collaboration/
@@ -205,24 +242,32 @@ $CLAUDE_METADATA/.claude/skills/
     └── SKILL.md
 ```
 
-### Pattern 3: Symlinked Global Skills
+### Pattern 3: Symlinking Skills to Projects
 
-**Use for:**
-- Share global skills across multiple projects
-- Keep skills updated centrally
-- Avoid duplication
+**This is THE standard pattern - all projects use symlinks, no exceptions.**
 
 **Setup:**
 ```bash
 # In each project
 cd /path/to/project
-ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
+mkdir -p .claude/skills .claude/commands
+
+# Symlink skills from central repo
+ln -s $CLAUDE_METADATA/skills/token-efficiency .claude/skills/token-efficiency
+ln -s $CLAUDE_METADATA/skills/my-project .claude/skills/my-project
+
+# Symlink commands from central repo
+ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
 ```
 
 **Benefits:**
 - Update once, applies everywhere
 - Consistent across all projects
 - Easy to maintain
+- Version controlled in one place
+- Team can discover all skills
+
+**Critical rule:** Projects contain ONLY symlinks, never actual skill/command files.
 
 ### Pattern 4: Skills with Supporting Documentation
 
@@ -316,7 +361,7 @@ ln -s $CLAUDE_METADATA/commands/category/*.md .claude/commands/
 
 ### Standardized Setup Prompts
 
-Provide users with copy-paste prompts for new projects in `$CLAUDE_METADATA/SETUP_PROMPT.md`:
+Provide users with copy-paste prompts for new projects in `$CLAUDE_METADATA/QUICK_REFERENCE.md`:
 
 **Basic setup**:
 ```
@@ -338,39 +383,48 @@ Set up Claude Code for a VGP pipeline project. Symlink the vgp-pipeline skill an
 ```
 $CLAUDE_METADATA/
 ├── README.md                    # Setup documentation
-├── SETUP_PROMPT.md             # Copy-paste prompts for users
-├── skills/
-│   ├── vgp-pipeline/
+├── QUICK_REFERENCE.md           # Copy-paste prompts for users
+├── NEW_MACHINE_SETUP.md         # First-time machine setup
+├── skills/                      # ALL skills (general + project-specific)
+│   ├── token-efficiency/        # General skill
 │   │   └── SKILL.md
-│   └── galaxy-tool-wrapping/
+│   ├── claude-collaboration/    # General skill
+│   │   └── SKILL.md
+│   ├── vgp-pipeline/           # Project-specific skill
+│   │   └── SKILL.md
+│   └── galaxy-tool-wrapping/   # Domain skill
 │       └── SKILL.md
-├── commands/
-│   └── vgp-pipeline/
-│       ├── check-status.md
-│       └── debug-failed.md
-└── .claude/                     # Legacy global skills
-    └── skills/
-        ├── token-efficiency/
-        └── claude-collaboration/
+└── commands/                    # ALL commands
+    ├── global/                  # Commands for all projects
+    │   ├── update-skills.md
+    │   └── sync-skills.md
+    └── vgp-pipeline/           # Project-specific commands
+        ├── check-status.md
+        └── debug-failed.md
 ```
+
+**Key point:** ALL skills and commands live in this central repo. Projects contain only symlinks.
 
 ### Migration Pattern
 
-**From duplicated skills** (old way):
+**From duplicated or local skills** (old/wrong way):
 ```
-project-1/.claude/skills/my-skill/SKILL.md
-project-2/.claude/skills/my-skill/SKILL.md  # Duplicate!
-project-3/.claude/skills/my-skill/SKILL.md  # Duplicate!
+project-1/.claude/skills/my-skill/SKILL.md          # ❌ Duplicate!
+project-2/.claude/skills/my-skill/SKILL.md          # ❌ Duplicate!
+project-3/.claude/skills/project-specific/SKILL.md  # ❌ Local only!
 ```
 
-**To centralized skills** (new way):
+**To centralized skills** (correct way):
 ```
-$CLAUDE_METADATA/skills/my-skill/SKILL.md   # Single source of truth
+$CLAUDE_METADATA/skills/my-skill/SKILL.md          # ✅ Single source of truth
+$CLAUDE_METADATA/skills/project-specific/SKILL.md  # ✅ Even project-specific!
 
 project-1/.claude/skills/my-skill -> $CLAUDE_METADATA/skills/my-skill
 project-2/.claude/skills/my-skill -> $CLAUDE_METADATA/skills/my-skill
-project-3/.claude/skills/my-skill -> $CLAUDE_METADATA/skills/my-skill
+project-3/.claude/skills/project-specific -> $CLAUDE_METADATA/skills/project-specific
 ```
+
+**Critical rule:** ALL skills in $CLAUDE_METADATA, even if only used by one project.
 
 ### Team Workflow
 
@@ -480,7 +534,7 @@ cd claude-team-skills
 mkdir -p .claude/skills
 
 # Add initial skills
-cp -r $CLAUDE_METADATA/.claude/skills/* .claude/skills/
+cp -r $CLAUDE_METADATA/skills/* .claude/skills/
 
 # Initialize git
 git init
@@ -770,6 +824,147 @@ ln -s ~/claude-team-skills/.claude/skills/* .claude/skills/
 
 ---
 
+## Documentation for Session Interruptions
+
+### Creating Resume Documentation
+
+When working on long-running tasks that may span multiple sessions, create comprehensive documentation to enable seamless resume:
+
+**Three-tier documentation approach**:
+
+1. **RESUME_HERE.md** - Quick start guide
+   - 3-5 step quick start
+   - Essential commands only
+   - Clear current status
+   - Visual indicators (✅🔄⏸️ emojis)
+
+2. **PROJECT_STATUS.md** - Complete context
+   - What has been done
+   - What's in progress
+   - What's next
+   - All files created
+   - Key findings
+   - Sample of missing data points
+
+3. **scripts/README.md** - Technical details
+   - Script documentation
+   - How to run each tool
+   - Troubleshooting
+   - Expected outputs
+
+### Template: RESUME_HERE.md
+
+```markdown
+# 🔄 Resume [Project Name]
+
+## Current Status
+✅ Completed: [brief status with metrics]
+🔄 In Progress: [what's running, % complete]
+⏸️ Interrupted at: [specific point with details]
+
+## Resume in 3 Steps
+
+### 1️⃣ Setup
+\```bash
+cd /path/to/project
+conda activate env_name
+\```
+
+### 2️⃣ Continue work
+\```bash
+./script.py  # Brief explanation of what this does
+\```
+
+### 3️⃣ Check results
+\```bash
+# Quick validation command with expected output
+\```
+
+## Full Documentation
+📄 **PROJECT_STATUS.md** - Complete context
+📄 **scripts/README.md** - Technical details
+```
+
+### Best Practices
+
+1. **Create early**: Don't wait until interruption is imminent
+   - Create documentation as you work
+   - Update it throughout the session
+
+2. **Test commands**: Verify resume commands actually work
+   - Don't assume paths or commands will work
+   - Include absolute paths when needed
+
+3. **Status tracking**: Include counts, percentages, specific progress points
+   - "6% complete (31/518 species)" not just "in progress"
+   - Show what's done vs. what remains
+
+4. **Next actions**: Be explicit about what happens next
+   - "Run script X, then merge with Y, then verify with Z"
+   - Include expected runtime
+
+5. **Background processes**: Document how to check/resume running processes
+   - Process IDs if applicable
+   - How to check status
+   - How to restart if needed
+
+### Example: Long-Running Data Fetch Project
+
+```markdown
+# 🔄 Resume GenomeScope Data Retrieval
+
+## Current Status
+✅ **123 species** have GenomeScope data (17.2% of 716 total)
+🔄 **Comprehensive search was running** - searches all assembly folders
+⏸️ **Interrupted at ~6% progress** (31/518 remaining species)
+
+## Resume in 3 Steps
+
+### 1️⃣ Navigate and activate environment
+\```bash
+cd /Users/user/project
+conda activate curation_paper
+\```
+
+### 2️⃣ Resume comprehensive search
+\```bash
+# This will pick up where we left off (skips existing data automatically)
+python scripts/03c_comprehensive_genomescope_search.py
+# Expected runtime: ~2 hours
+\```
+
+### 3️⃣ Merge new data (after search completes)
+\```bash
+python scripts/04_merge_and_enrich.py
+\```
+
+## Files Already Created
+- genomescope_data/ - 123 raw summary files
+- genomescope_enrichment_data.csv - Parsed data
+- VGPPhase1-freeze-1.0-ENRICHED.csv - Main dataset
+
+## Full Documentation
+📄 **GENOMESCOPE_DATA_RETRIEVAL_STATUS.md** - Complete status
+📄 **scripts/README_GENOMESCOPE_SCRIPTS.md** - Script docs
+```
+
+### When to Create Resume Documentation
+
+**Always create when:**
+- Task will take hours to complete
+- Running scripts that can be interrupted
+- Multiple scripts need to be run in sequence
+- Complex setup with multiple steps
+- Work may span multiple days/sessions
+
+**Pattern ensures:**
+- Anyone (including you later) can resume work
+- No mental overhead to remember state
+- Clear next steps visible immediately
+- All context preserved
+
+---
+
 ## Quick Reference
 
 ### Daily Workflow
@@ -807,10 +1002,21 @@ ln -s ~/claude-team-skills/.claude/skills/* .claude/skills/
 ## Summary
 
 **Key Principles:**
-1. Skills are permanent, sessions are temporary
-2. Update skills explicitly - Claude won't auto-update
-3. Version control your skills with git
-4. Share skills across team for consistency
-5. Regular reviews keep skills valuable
+1. **Skills are permanent, sessions are temporary**
+2. **Update skills explicitly** - Claude won't auto-update
+3. **ALL skills in $CLAUDE_METADATA** - No local skills or commands ever
+4. **Version control your skills** with git in central repo
+5. **Share skills across team** - Centralization ensures consistency
+6. **Regular reviews** keep skills valuable
 
-**Remember:** Claude is a powerful assistant, but skills are how you make that power consistent, shareable, and permanent. Invest in your skills, and they'll pay dividends for your entire team.
+**Critical Architectural Rule:**
+🚫 **NEVER create skills or commands directly in project directories**
+✅ **ALWAYS create in $CLAUDE_METADATA and symlink to projects**
+
+Even project-specific skills must live in the central repository. This ensures:
+- **Single source of truth** - No duplicates, no divergence
+- **Version control** - All skills tracked in one git repo
+- **Team sharing** - Everyone can discover and use all skills
+- **Easy maintenance** - Update once, applies everywhere
+
+**Remember:** Claude is a powerful assistant, but skills are how you make that power consistent, shareable, and permanent. The centralized architecture ensures your team's knowledge remains organized, discoverable, and maintainable. Invest in your skills, and they'll pay dividends for your entire team.

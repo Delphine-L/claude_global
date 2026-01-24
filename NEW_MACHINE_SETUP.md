@@ -69,10 +69,19 @@ bash $CLAUDE_METADATA/enable-skills.sh
 
 ```bash
 cd /path/to/your/project
-mkdir -p .claude/skills
-ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
-ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-automation
-# Add more skills as needed
+mkdir -p .claude/skills .claude/commands
+
+# Essential skills
+ln -s $CLAUDE_METADATA/skills/claude-meta/token-efficiency .claude/skills/token-efficiency
+ln -s $CLAUDE_METADATA/skills/claude-meta/collaboration .claude/skills/collaboration
+ln -s $CLAUDE_METADATA/skills/project-management/managing-environments .claude/skills/managing-environments
+ln -s $CLAUDE_METADATA/skills/project-management/folder-organization .claude/skills/folder-organization
+
+# Global commands (management tools)
+ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
+
+# Project-specific skills (add as needed)
+ln -s $CLAUDE_METADATA/skills/galaxy/automation .claude/skills/automation  # For Galaxy projects
 ```
 
 #### Option C: Work directly in claude_data
@@ -85,9 +94,10 @@ cd $CLAUDE_METADATA
 ## Verification Checklist
 
 - [ ] `echo $CLAUDE_METADATA` shows your claude_data directory path
-- [ ] `ls $CLAUDE_METADATA/.claude/skills` shows available skills
+- [ ] `ls $CLAUDE_METADATA/skills` shows available skills
+- [ ] `ls $CLAUDE_METADATA/commands/global` shows available global commands
 - [ ] `.claude/settings.local.json` exists (if using permissions)
-- [ ] Skills are enabled in your project (test with Claude Code)
+- [ ] Skills and commands are enabled in your project (test with Claude Code)
 
 ## Customizing Paths
 
@@ -159,6 +169,5 @@ When sharing this repository with a team:
 
 After setup, see:
 
-- `README.md` - Full documentation
-- `QUICK_REFERENCE.md` - Quick reference for common tasks
-- `SETUP_PROMPT.md` - Detailed setup prompts for Claude Code
+- `README.md` - Full documentation and overview
+- `QUICK_REFERENCE.md` - Copy-paste prompts, commands, and workflows

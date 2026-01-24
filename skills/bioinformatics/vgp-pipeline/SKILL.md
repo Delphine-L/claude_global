@@ -575,6 +575,103 @@ for inv in workflow_invocations:
 
 **Success Rate**: Expect ~80-90% success rate for VGP species in GenomeArk.
 
+## Finding Missing VGP Accessions
+
+### Problem
+Some curated VGP species have no accession numbers in the enriched dataset and aren't found in GenomeArk AWS. They may have been submitted directly to NCBI or are in external collaborating projects.
+
+### Solution: Search NCBI with VGP-specific Filtering
+
+**Search NCBI Assembly database:**
+```python
+import requests
+from urllib.parse import quote
+
+def search_ncbi_assemblies(species_name):
+    """Search NCBI for assemblies by species name"""
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+
+    # Search for assembly IDs
+    search_url = f"{base_url}esearch.fcgi"
+    search_params = {
+        'db': 'assembly',
+        'term': f'"{species_name}"[Organism]',
+        'retmode': 'json',
+        'retmax': 100
+    }
+    search_response = requests.get(search_url, params=search_params)
+    assembly_ids = search_response.json()['esearchresult']['idlist']
+
+    # Fetch assembly details
+    fetch_url = f"{base_url}esummary.fcgi"
+    fetch_params = {
+        'db': 'assembly',
+        'id': ','.join(assembly_ids),
+        'retmode': 'json'
+    }
+    fetch_response = requests.get(fetch_url, params=fetch_params)
+
+    # Extract submitter information
+    results = []
+    for assembly_id, data in fetch_response.json()['result'].items():
+        if assembly_id == 'uids':
+            continue
+        results.append({
+            'accession': data.get('assemblyaccession'),
+            'submitter': data.get('submitter'),
+            'name': data.get('assemblyname')
+        })
+
+    return results
+```
+
+**CRITICAL: Filter for VGP-only submissions:**
+```python
+# Only keep VGP-submitted assemblies
+vgp_assemblies = [
+    r for r in results
+    if r['submitter'] == 'Vertebrate Genomes Project'
+]
+```
+
+**Why this matters:**
+- Non-VGP assemblies may have different quality standards
+- Other projects (Bat1K, Ocean Genomes) may use different assembly methods
+- VGP-specific filtering ensures data consistency
+- Prevents mixing different curation standards
+
+**Example results from VGP Phase 1 enrichment:**
+- Searched: 17 species missing accessions
+- Found: 24 assemblies total from NCBI
+- VGP-only: 5 accessions recovered
+  - mTenEca1 (Tenrec ecaudatus): GCF_050624435.1
+  - mNeoFlo1 (Neotoma floridana): GCA_050000055.1
+  - rHydTec1 (Hydromedusa tectifera): GCA_049999965.1
+  - rPelSom1 (Pelomedusa somalica): GCA_051311615.1
+  - rPodUni1 (Podocnemis unifilis): GCA_050000005.1
+
+**Store recovered data separately:**
+```python
+# Add new columns instead of overwriting existing data
+df['accession_recovered'] = None  # Primary accession
+df['accession_recovered_all'] = None  # All accessions (pipe-separated)
+
+# Fill in recovered accessions
+for tolid, accs in recovered_accessions.items():
+    mask = df['tolid'] == tolid
+    df.loc[mask, 'accession_recovered'] = accs['primary']
+    df.loc[mask, 'accession_recovered_all'] = accs['all']
+```
+
+This preserves data provenance and makes it clear which accessions were found later.
+
+**Species not in GenomeArk:**
+If species have accessions but no tolids and aren't found in AWS:
+- These are likely direct NCBI submissions
+- May be from collaborating projects (not in GenomeArk)
+- May be pre-VGP naming convention
+- Document separately for tracking purposes
+
 ## Curation Impact Analysis - Comparing Methods
 
 ### Data Filtering for Fair Comparison

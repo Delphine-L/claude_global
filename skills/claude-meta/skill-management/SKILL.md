@@ -46,7 +46,7 @@ ls -la $CLAUDE_METADATA/
 # ├── skills/       # Global skills
 # ├── commands/     # Global commands
 # ├── README.md
-# └── SETUP_PROMPT.md
+# └── QUICK_REFERENCE.md
 ```
 
 ### Complete Setup from Scratch
@@ -73,7 +73,7 @@ If setting up a centralized skill repository for the first time:
 
 4. **Create initial documentation**:
    ```bash
-   # Create README and SETUP_PROMPT
+   # Create README and QUICK_REFERENCE
    # (use templates from claude-skill-management skill)
    ```
 
@@ -273,7 +273,7 @@ ln -s $CLAUDE_METADATA/commands/your-category/command-name.md /tmp/test-project/
 #### 1. token-efficiency (Essential)
 **Why:** Automatically optimizes Claude's token usage, saving 80-90% on typical operations
 ```bash
-ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
+ln -s $CLAUDE_METADATA/skills/token-efficiency .claude/skills/token-efficiency
 ```
 
 **Benefits:**
@@ -285,7 +285,7 @@ ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-effi
 #### 2. claude-collaboration (Highly Recommended)
 **Why:** Teaches best practices for managing skills and team collaboration
 ```bash
-ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude-collaboration
+ln -s $CLAUDE_METADATA/skills/claude-collaboration .claude/skills/claude-collaboration
 ```
 
 **Benefits:**
@@ -294,10 +294,10 @@ ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude
 - Helps onboard team members
 - Ensures consistency across projects
 
-#### 3. galaxy-automation (Recommended for Galaxy projects)
+#### 3. galaxy-automation (For Galaxy projects)
 **Why:** Universal BioBlend and Planemo knowledge for any Galaxy automation project
 ```bash
-ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-automation
+ln -s $CLAUDE_METADATA/skills/galaxy-automation .claude/skills/galaxy-automation
 ```
 
 **Benefits:**
@@ -310,10 +310,11 @@ ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-au
 **Useful for managing skills across all projects:**
 ```bash
 mkdir -p .claude/commands
-ln -s $CLAUDE_METADATA/commands/global/update-skills.md .claude/commands/
-ln -s $CLAUDE_METADATA/commands/global/list-skills.md .claude/commands/
-ln -s $CLAUDE_METADATA/commands/global/setup-project.md .claude/commands/
-ln -s $CLAUDE_METADATA/commands/global/sync-skills.md .claude/commands/
+# Symlink ALL global commands (always include)
+ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
+
+
+
 ```
 
 **Available commands:**
@@ -332,14 +333,18 @@ cd ~/Workdir/your-new-project/
 mkdir -p .claude/skills .claude/commands
 
 # Symlink essential global skills
-ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
-ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude-collaboration
-ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-automation
+ln -s $CLAUDE_METADATA/skills/token-efficiency .claude/skills/token-efficiency
+ln -s $CLAUDE_METADATA/skills/claude-collaboration .claude/skills/claude-collaboration
+ln -s $CLAUDE_METADATA/skills/python-environment-management .claude/skills/python-environment-management
 
-# Symlink useful global commands
-ln -s $CLAUDE_METADATA/commands/global/update-skills.md .claude/commands/
-ln -s $CLAUDE_METADATA/commands/global/list-skills.md .claude/commands/
-ln -s $CLAUDE_METADATA/commands/global/setup-project.md .claude/commands/
+# Symlink ALL global commands (always include)
+ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
+
+# Add project-specific skills as needed
+# For Galaxy projects:
+# ln -s $CLAUDE_METADATA/skills/galaxy-automation .claude/skills/galaxy-automation
+
+
 
 # Verify
 ls -la .claude/skills/
@@ -349,8 +354,8 @@ ls -la .claude/commands/
 **Or ask Claude:**
 ```
 Set up this new project with Claude Code. Symlink the essential global skills
-(token-efficiency, claude-collaboration, and galaxy-automation) and global commands
-(update-skills, list-skills, setup-project) from $CLAUDE_METADATA, then show me
+(token-efficiency, claude-collaboration, and python-environment-management) and global commands
+from $CLAUDE_METADATA/skills/ and ALL global commands from $CLAUDE_METADATA/commands/global/, then show me
 other available skills I might want to add.
 ```
 
@@ -370,7 +375,7 @@ Set up Claude Code for this project. Show me available skills in $CLAUDE_METADAT
 ```
 
 Claude will:
-1. **Automatically symlink token-efficiency, claude-collaboration, and galaxy-automation** (if not already present)
+1. **Automatically symlink token-efficiency, claude-collaboration, python-environment-management** (if not already present)
 2. List all available skills and commands
 3. Ask which additional ones you want
 4. Create the symlinks
@@ -834,6 +839,49 @@ cp -r $CLAUDE_METADATA/skills/my-skill .claude/skills/my-skill
 
 **Why:** Symlinks mean updates propagate automatically. Copies create maintenance nightmares.
 
+### 8. Template-Based Script Generation
+
+When creating reusable installers or scripts that need customization across repositories:
+
+**Use placeholders in templates:**
+```bash
+# Template with placeholders
+TEMPLATE='
+MAIN_FILE="__MAIN_FILE__"
+BACKUP_DIR="__BACKUP_BASE_DIR__"
+DAYS="__DAYS_TO_KEEP__"
+'
+
+# Substitute with actual values
+echo "$TEMPLATE" | \
+  sed "s|__MAIN_FILE__|$ACTUAL_FILE|g" | \
+  sed "s|__BACKUP_BASE_DIR__|$ACTUAL_DIR|g" | \
+  sed "s|__DAYS_TO_KEEP__|$ACTUAL_DAYS|g" \
+  > final_script.sh
+```
+
+**Benefits:**
+- Reusable across projects
+- Single source of truth for logic
+- Easy to maintain and update
+- Parameter validation in one place
+- Reduces duplication
+
+**Example use case:**
+Creating a global installer for backup systems that can be customized for any data file and directory structure. The template contains all the logic, and sed substitution customizes it for each project.
+
+**Alternative: Template files:**
+```bash
+# Store template in file
+cat > template.sh << 'EOF'
+MAIN_FILE="__MAIN_FILE__"
+BACKUP_DIR="__BACKUP_BASE_DIR__"
+EOF
+
+# Generate from template
+sed "s|__MAIN_FILE__|data.csv|g" template.sh > backup.sh
+```
+
 ---
 
 ## Quick Reference
@@ -894,8 +942,8 @@ cd ~/Workdir/new-project
 mkdir -p .claude/skills .claude/commands
 
 # Always symlink these essential skills
-ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
-ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude-collaboration
+ln -s $CLAUDE_METADATA/skills/token-efficiency .claude/skills/token-efficiency
+ln -s $CLAUDE_METADATA/skills/claude-collaboration .claude/skills/claude-collaboration
 
 # Always symlink these useful commands
 ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
@@ -959,18 +1007,24 @@ ls -la .claude/commands/
 2. **Symlink essential global skills**:
    ```bash
    # Always include these
-   ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
-   ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude-collaboration
-   ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-automation
+   ln -s $CLAUDE_METADATA/skills/token-efficiency .claude/skills/token-efficiency
+   ln -s $CLAUDE_METADATA/skills/claude-collaboration .claude/skills/claude-collaboration
+   ln -s $CLAUDE_METADATA/skills/python-environment-management .claude/skills/python-environment-management
    ```
 
-3. **Symlink useful global commands**:
+3. **Symlink ALL global commands**:
    ```bash
-   # Highly recommended for all projects
+   # Always include for all projects
    ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
    ```
 
-4. **Tell Claude** (or use `/setup-project` if already linked):
+4. **Add project-specific skills** (if needed):
+   ```bash
+   # For Galaxy projects:
+   ln -s $CLAUDE_METADATA/skills/galaxy-automation .claude/skills/galaxy-automation
+   ```
+
+5. **Tell Claude** (or use `/setup-project` if already linked):
    ```
    I've set up the essential skills and commands. Show me other available skills in
    $CLAUDE_METADATA that might be relevant for [describe your project type].
@@ -1037,7 +1091,7 @@ As your skill repository grows, redundancies can accumulate from:
    - Skills (must be unique, in `skills/*/SKILL.md`)
    - Supporting docs (should be in skill subdirectories)
    - Commands (one version only, in `commands/category/`)
-   - Root docs (only README.md, SETUP_PROMPT.md)
+   - Root docs (only README.md, QUICK_REFERENCE.md)
 
 3. **Always backup before cleanup**:
    ```bash
@@ -1050,7 +1104,7 @@ As your skill repository grows, redundancies can accumulate from:
    - **Standalone docs** → Move to `skills/skill-name/reference.md`
    - **Legacy commands** → Remove if superseded by new versions
    - **Duplicate guides** → Consolidate into single skill
-   - **Quick starts** → Replace with standardized SETUP_PROMPT.md
+   - **Quick reference prompts** → Replace with standardized QUICK_REFERENCE.md
 
 5. **Update skill to reference supporting docs**:
    ```markdown
@@ -1081,19 +1135,23 @@ As your skill repository grows, redundancies can accumulate from:
 1. **Central repository** - All skills in `$CLAUDE_METADATA`
 2. **Symlinks, not copies** - Updates propagate automatically
 3. **Version control** - Track changes with git
-4. **Essential global skills first** - Always symlink token-efficiency, claude-collaboration, and galaxy-automation
+4. **Essential global skills first** - Always symlink token-efficiency, claude-collaboration, and python-environment-management
 5. **Selective activation** - Link only relevant skills per project
 6. **Team collaboration** - Share via git, everyone benefits
 
 **Every new project should start with:**
 ```bash
-# Essential global skills
-ln -s $CLAUDE_METADATA/.claude/skills/token-efficiency .claude/skills/token-efficiency
-ln -s $CLAUDE_METADATA/.claude/skills/claude-collaboration .claude/skills/claude-collaboration
-ln -s $CLAUDE_METADATA/.claude/skills/galaxy-automation .claude/skills/galaxy-automation
+# Essential global skills (always)
+ln -s $CLAUDE_METADATA/skills/token-efficiency .claude/skills/token-efficiency
+ln -s $CLAUDE_METADATA/skills/claude-collaboration .claude/skills/claude-collaboration
+ln -s $CLAUDE_METADATA/skills/python-environment-management .claude/skills/python-environment-management
 
-# Useful global commands
+# ALL global commands (always include for management)
 ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
+
+# Project-specific skills (add as needed)
+# For Galaxy projects:
+# ln -s $CLAUDE_METADATA/skills/galaxy-automation .claude/skills/galaxy-automation
 ```
 
 **Available global commands:**
