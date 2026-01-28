@@ -15,6 +15,213 @@ Expert knowledge for creating comprehensive, statistically rigorous Jupyter note
 - Building series of related visualizations (10+ figures)
 - Analyzing large datasets with multiple characteristics
 
+## Direct Notebook Editing with NotebookEdit Tool
+
+**IMPORTANT**: You can edit Jupyter notebooks directly using the NotebookEdit tool without writing Python scripts or using command-line JSON manipulation.
+
+### NotebookEdit Tool Overview
+
+The NotebookEdit tool allows direct manipulation of `.ipynb` files with three modes:
+
+**1. Replace mode** (default): Replace entire cell content
+```python
+NotebookEdit(
+    notebook_path="/path/to/notebook.ipynb",
+    cell_id="cell-14",
+    cell_type="markdown",  # or "code"
+    new_source="New content for this cell"
+)
+```
+
+**2. Insert mode**: Add new cells
+```python
+NotebookEdit(
+    notebook_path="/path/to/notebook.ipynb",
+    cell_id="cell-14",  # Insert AFTER this cell
+    edit_mode="insert",
+    cell_type="markdown",
+    new_source="Content for new cell"
+)
+```
+
+**3. Delete mode**: Remove cells
+```python
+NotebookEdit(
+    notebook_path="/path/to/notebook.ipynb",
+    cell_id="cell-14",
+    edit_mode="delete",
+    new_source=""  # Required but ignored
+)
+```
+
+### When to Use NotebookEdit vs Python Scripts
+
+**Use NotebookEdit when:**
+- ✅ Updating existing cell content (figure captions, analysis text)
+- ✅ Adding single new cells (headers, display code, descriptions)
+- ✅ Removing specific cells
+- ✅ Making targeted changes to notebook structure
+- ✅ Synchronizing notebook documentation with code changes
+
+**Use Python scripts when:**
+- ❌ Bulk operations (reordering many cells, restructuring entire notebook)
+- ❌ Complex conditional logic based on cell content
+- ❌ Programmatic generation of many cells at once
+- ❌ Cell reordering requires precise index manipulation
+
+### Finding Cell IDs
+
+**Method 1: Bash with jq**
+```bash
+# List all cells with IDs
+cat notebook.ipynb | jq '.cells[] | {id: .id, type: .cell_type, preview: .source[:2]}'
+
+# Find specific content
+cat notebook.ipynb | jq '.cells[] | select(.source[] | contains("Figure 10")) | .id'
+```
+
+**Method 2: Python script**
+```python
+import json
+with open('notebook.ipynb') as f:
+    nb = json.load(f)
+for i, cell in enumerate(nb['cells']):
+    src = ''.join(cell.get('source', []))[:60]
+    print(f"{i}: {cell.get('id')}: {cell['cell_type']}: {src}...")
+```
+
+**Method 3: Insert without cell_id**
+```python
+# Insert at end of notebook
+NotebookEdit(
+    notebook_path="/path/to/notebook.ipynb",
+    edit_mode="insert",
+    cell_type="markdown",
+    new_source="New section at end"
+)
+```
+
+### Common Workflow: Updating Figure Documentation
+
+When you regenerate figures with code changes:
+
+1. **Update figure generation script**
+2. **Regenerate figure file**
+3. **Update notebook caption** with NotebookEdit:
+   ```python
+   NotebookEdit(
+       notebook_path="Analysis.ipynb",
+       cell_id="cell-26",  # Caption cell after figure display
+       cell_type="markdown",
+       new_source="**Figure 10. Updated caption...** [description]"
+   )
+   ```
+
+### Common Workflow: Adding New Figure Section
+
+When adding a new figure to existing notebook:
+
+```python
+# 1. Add section header
+NotebookEdit(
+    notebook_path="notebook.ipynb",
+    cell_id="cell-25",  # After previous figure
+    edit_mode="insert",
+    cell_type="markdown",
+    new_source="---\n\n## Figure 10: New Analysis\n\n### Description"
+)
+
+# 2. Add display code
+NotebookEdit(
+    notebook_path="notebook.ipynb",
+    cell_id="cell-26",  # After header just created
+    edit_mode="insert",
+    cell_type="code",
+    new_source="display(Image(filename=str(FIG_DIR / '10_analysis.png')))"
+)
+
+# 3. Add caption and analysis
+NotebookEdit(
+    notebook_path="notebook.ipynb",
+    cell_id="cell-27",  # After display code
+    edit_mode="insert",
+    cell_type="markdown",
+    new_source="**Figure 10. Caption...** Analysis text..."
+)
+```
+
+### Verifying Edits
+
+Always check notebook structure after edits:
+```bash
+# Check cell count
+cat notebook.ipynb | jq '.cells | length'
+
+# Check specific section
+cat notebook.ipynb | jq '.cells[25:30][] | {id: .id, type: .cell_type}'
+
+# Preview content
+cat notebook.ipynb | python3 -c "
+import json, sys
+nb = json.load(sys.stdin)
+for i, c in enumerate(nb['cells'][25:30]):
+    src = ''.join(c.get('source', []))[:80]
+    print(f'{i+25}: {c.get(\"cell_type\")}: {src}...')
+"
+```
+
+### Advantages of NotebookEdit
+
+- **No temporary files** needed
+- **No JSON manipulation** required
+- **Preserves formatting** and cell metadata
+- **Atomic operations** (single tool call per edit)
+- **Clear intent** (replace/insert/delete modes)
+- **Error handling** built-in
+
+### Common Pitfalls
+
+❌ **Don't use Edit tool on .ipynb files** - It treats them as text, corrupting JSON structure
+```python
+# WRONG - corrupts notebook
+Edit(
+    file_path="notebook.ipynb",
+    old_string="old text",
+    new_string="new text"
+)
+```
+
+✅ **Use NotebookEdit for notebooks**
+```python
+# CORRECT
+NotebookEdit(
+    notebook_path="notebook.ipynb",
+    cell_id="cell-10",
+    new_source="new cell content"
+)
+```
+
+❌ **Don't forget cell_type when inserting**
+```python
+# WRONG - missing cell_type
+NotebookEdit(
+    notebook_path="notebook.ipynb",
+    edit_mode="insert",
+    new_source="content"
+)
+```
+
+✅ **Always specify cell_type for insert**
+```python
+# CORRECT
+NotebookEdit(
+    notebook_path="notebook.ipynb",
+    edit_mode="insert",
+    cell_type="markdown",
+    new_source="content"
+)
+```
+
 ## Common Pitfalls
 
 ### Variable Shadowing in Loops
@@ -275,6 +482,111 @@ if not np.isnan(pval):
 
 **Consistency**: Ensure all quantitative comparison figures include this test for statistical rigor.
 
+## CRITICAL: Statistical Claim Verification
+
+### The Problem
+Notebook analysis text can contain claims based on:
+- Preliminary results that changed
+- Copy-paste errors from similar analyses
+- Expectations that weren't verified
+- Old results before data/code updates
+
+**Real example from production notebook:**
+- **Text claimed**: "significantly higher N50 values (p < 0.001)"
+- **Actual result**: p = 0.28 (NOT significant)
+- **Impact**: Would have published false conclusion
+
+### Mandatory Verification Workflow
+
+**BEFORE finalizing any analysis notebook:**
+
+#### 1. Extract All Statistical Claims
+Search for keywords:
+- p-values: `p <`, `p =`, `p-value`
+- Significance: `significant`, `significantly`, `difference`
+- Comparisons: `higher`, `lower`, `greater`, `increased`, `decreased`
+
+#### 2. Run Actual Statistical Tests
+Don't trust existing text. Rerun the tests:
+
+```python
+from scipy import stats
+import pandas as pd
+
+# Load actual data
+df = pd.read_csv('data.csv')
+
+# Run test (example: Mann-Whitney U)
+group1 = df[df['type']=='A']['metric']
+group2 = df[df['type']=='B']['metric']
+stat, p = stats.mannwhitneyu(group1, group2, alternative='two-sided')
+
+print(f"Actual p-value: {p:.6f}")
+print(f"Significant (p<0.05): {p < 0.05}")
+```
+
+#### 3. Document Actual Results
+Create verification table:
+
+| Figure | Metric | Text Claims | Actual p-value | Match? |
+|--------|--------|-------------|----------------|--------|
+| Fig 1 | N50 | "p<0.001 significant" | **0.28** | ❌ FALSE |
+| Fig 2 | Gaps | "p=0.002 significant" | 0.0023 | ✅ TRUE |
+
+#### 4. Common Discrepancy Patterns
+
+**False Positive (Type I error in text):**
+- Text claims significance when p > 0.05
+- **Fix**: Rewrite to state "no significant difference"
+
+**Missed Significance:**
+- Text implies no difference when p < 0.05
+- **Fix**: Add statistical evidence and effect interpretation
+
+**Wrong Direction:**
+- Text claims "Group A > Group B" when opposite is true
+- **Fix**: Reverse comparison direction
+
+**Outdated Organization:**
+- Figures organized by old results
+- **Fix**: Reorganize sections based on actual significance
+
+#### 5. Correction Protocol
+
+When errors found:
+1. **Document the error** (create CORRECTIONS.md)
+2. **Run verification script** on ALL claims
+3. **Reorganize notebook** if section classification wrong
+4. **Rewrite analysis text** to match actual results
+5. **Update table of contents** with correct annotations
+6. **Create milestone backup** documenting corrections
+
+### Prevention
+
+**For new analyses:**
+```python
+# Write analysis text AFTER running test, not before
+stat, p = stats.mannwhitneyu(group1, group2)
+
+# Generate text from actual results
+if p < 0.05:
+    text = f"significant difference (p={p:.4f})"
+else:
+    text = f"no significant difference (p={p:.2f})"
+```
+
+**Before any publication/sharing:**
+1. Run verification on ALL statistical claims
+2. Cross-check figure captions with actual p-values
+3. Verify section organization matches significance
+4. Get second person to spot-check key claims
+
+### Why This Is Critical
+- **Scientific integrity**: False claims damage credibility
+- **Reproducibility**: Others can't reproduce wrong results
+- **Peer review**: Reviewers will catch errors, causing rejection
+- **Career impact**: Publishing false statistics has serious consequences
+
 ## Large-Scale Analysis Structure
 
 ### Control Analyses: Checking for Confounding
@@ -289,32 +601,32 @@ from scipy import stats
 def check_confounding(df, method_col, characteristics):
     """
     Compare sample characteristics between methods to check for confounding.
-    
+
     Args:
         df: DataFrame with samples
         method_col: Column indicating method ('Method_A', 'Method_B')
         characteristics: List of column names to compare
-    
+
     Returns:
         DataFrame with statistical comparison
     """
     results = []
-    
+
     for char in characteristics:
         # Get data for each method
         method_a = df[df[method_col] == 'Method_A'][char].dropna()
         method_b = df[df[method_col] == 'Method_B'][char].dropna()
-        
+
         if len(method_a) < 5 or len(method_b) < 5:
             continue
-        
+
         # Statistical test
         stat, pval = stats.mannwhitneyu(method_a, method_b, alternative='two-sided')
-        
+
         # Calculate effect size (% difference in medians)
         pooled_median = pd.concat([method_a, method_b]).median()
         effect_pct = (method_a.median() - method_b.median()) / pooled_median * 100
-        
+
         results.append({
             'Characteristic': char,
             'Method_A_median': method_a.median(),
@@ -325,11 +637,11 @@ def check_confounding(df, method_col, characteristics):
             'effect_pct': effect_pct,
             'significant': pval < 0.05
         })
-    
+
     return pd.DataFrame(results)
 
 # Example usage
-characteristics = ['genome_size', 'gc_content', 'heterozygosity', 
+characteristics = ['genome_size', 'gc_content', 'heterozygosity',
                   'repeat_content', 'sequencing_coverage']
 
 confounding_check = check_confounding(df, 'curation_method', characteristics)
@@ -350,7 +662,7 @@ print(confounding_check)
 
 [Table comparing characteristics]
 
-**Conclusion**: 
+**Conclusion**:
 - If no differences → Valid method comparison
 - If Method A works with harder samples → Strengthens conclusions
 - If Method A works with easier samples → Potential confounding
@@ -570,12 +882,12 @@ warning_text += f"Severe imbalance limits\nstatistical comparability"
 
 ax.text(0.98, 0.02, warning_text, transform=ax.transAxes,
        fontsize=11, verticalalignment='bottom', horizontalalignment='right',
-       bbox=dict(boxstyle='round', facecolor='red', alpha=0.2, 
+       bbox=dict(boxstyle='round', facecolor='red', alpha=0.2,
                 edgecolor='red', linewidth=2),
        family='monospace', color='darkred', fontweight='bold')
 
 # Update title to indicate limitation
-ax.set_title('Your Title\n(SUPPLEMENTARY - Limited Data Availability)', 
+ax.set_title('Your Title\n(SUPPLEMENTARY - Limited Data Availability)',
             fontsize=14, fontweight='bold')
 ```
 
@@ -585,10 +897,10 @@ ax.set_title('Your Title\n(SUPPLEMENTARY - Limited Data Availability)',
 - Group A: 84/200 (42%)
 - Group B: 10/350 (3%)
 
-This **8-fold imbalance** severely limits statistical comparability. The 10 Group B 
-samples are unlikely to be representative of all 350. 
+This **8-fold imbalance** severely limits statistical comparability. The 10 Group B
+samples are unlikely to be representative of all 350.
 
-**Interpretation**: Comparisons should be interpreted with extreme caution. This 
+**Interpretation**: Comparisons should be interpreted with extreme caution. This
 figure is provided for completeness but should be considered **supplementary**.
 ```
 
@@ -822,81 +1134,6 @@ for inv in data:
 data_with_species = [inv for inv in data if inv.get('species_id') and inv.get('genome_size')]
 ```
 
-## Data Backup Strategy
-
-### The Problem
-Long-running data enrichment projects risk:
-- Losing days of work from accidental overwrites
-- Unable to revert to previous data states
-- No documentation of what changed when
-- Running out of disk space from manual backups
-
-### Solution: Automated Two-Tier Backup System
-
-**Architecture:**
-1. **Daily backups** - Rolling 7-day window (auto-cleanup)
-2. **Milestone backups** - Permanent, compressed (gzip ~80% reduction)
-3. **CHANGELOG** - Automatic documentation of all changes
-
-**Implementation:**
-```bash
-# Daily backup (start of each work session)
-./backup_table.sh
-
-# Milestone backup (after major changes)
-./backup_table.sh milestone "added genomescope data for 21 species"
-
-# List all backups
-./backup_table.sh list
-
-# Restore from backup (with safety backup)
-./backup_table.sh restore 2026-01-23
-```
-
-**Directory structure:**
-```
-backups/
-├── daily/              # Rolling 7-day backups (~770KB each)
-│   ├── backup_2026-01-17.csv
-│   └── backup_2026-01-23.csv
-├── milestones/         # Permanent compressed backups (~200KB each)
-│   ├── milestone_2026-01-20_initial_enrichment.csv.gz
-│   └── milestone_2026-01-23_recovered_accessions.csv.gz
-├── CHANGELOG.md        # Auto-generated change log
-└── README.md           # User documentation
-```
-
-**Storage efficiency:**
-- Daily backups: ~5.4 MB (7 days × 770KB)
-- Milestone backups: ~200KB each compressed (80% size reduction)
-- Total: <10 MB for complete project history
-- Old daily backups auto-delete after 7 days
-
-**When to create milestones:**
-- After adding new data sources (GenomeScope, karyotypes, etc.)
-- Before major data transformations
-- When completing analysis sections
-- Before submitting/publishing
-
-**Global installer available:**
-```bash
-# Install backup system in any repository
-install-backup-system -f your_data_file.csv
-```
-
-**Key features:**
-- Never overwrites without confirmation
-- Creates safety backup before restore
-- Complete audit trail in CHANGELOG
-- Color-coded terminal output
-- Handles both CSV and TSV files
-
-**Benefits for data analysis:**
-- **Data provenance** - CHANGELOG documents every modification
-- **Confidence to experiment** - Easy rollback encourages trying approaches
-- **Professional workflow** - Matches publication standards
-- **Collaboration-ready** - Team members can understand data history
-
 ## Debugging Data Availability
 
 Before creating correlation plots, verify data overlap:
@@ -949,7 +1186,14 @@ elif isinstance(data, dict):
 
 ## Programmatic Notebook Manipulation
 
-When inserting cells into large notebooks:
+### Legacy Method: JSON Manipulation (Use NotebookEdit Instead)
+
+**⚠️ Deprecated**: Use NotebookEdit tool for most operations. Only use JSON manipulation for:
+- Bulk cell reordering
+- Complex conditional operations
+- Custom cell metadata manipulation
+
+When inserting cells into large notebooks using JSON:
 
 ```python
 import json
@@ -978,6 +1222,60 @@ with open('notebook.ipynb', 'w') as f:
     json.dump(notebook, f, indent=1)
 ```
 
+### Reorganizing Notebook Sections
+
+**When Needed:**
+- Statistical significance changed (p-values updated)
+- Need to regroup analyses by new criteria
+- Logical flow improvement
+
+**Bulk Cell Reordering Pattern:**
+
+```python
+import json
+
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+
+# Map figure numbers to cell ranges
+figure_ranges = {
+    1: (20, 26),  # Cells 20-25 contain Figure 1
+    2: (4, 8),    # Cells 4-7 contain Figure 2
+}
+
+# Define new order
+significant_figs = [2, 4, 5, 6, 7]
+not_significant_figs = [1, 3]
+
+# Build new cell list
+new_cells = []
+new_cells.extend(nb['cells'][0:3])  # Keep intro cells
+
+# Add section header
+section1_header = {
+    'cell_type': 'markdown',
+    'metadata': {},
+    'source': ['## Section 1: Significant Results\n']
+}
+new_cells.append(section1_header)
+
+# Add figures in new order
+for fig_num in significant_figs:
+    start, end = figure_ranges[fig_num]
+    new_cells.extend(nb['cells'][start:end])
+
+# Replace cells
+nb['cells'] = new_cells
+
+# Save
+with open('notebook.ipynb', 'w') as f:
+    json.dump(nb, f, indent=1)
+```
+
+**After Reorganization:**
+- Regenerate Table of Contents to reflect new structure
+- Verify all cross-references still work
+- Update section numbering if needed
 
 ### Synchronizing Figure Code and Notebook Documentation
 
@@ -1025,6 +1323,7 @@ grep -n "Figure 4" notebook.ipynb
 8. **Organize with markdown headers** for navigation
 9. **Test with small datasets** before running full analyses
 10. **Save intermediate results** for expensive computations
+11. **Use NotebookEdit tool** for all `.ipynb` file modifications
 
 ## Common Tasks
 
@@ -1037,7 +1336,7 @@ grep -n "Figure 4" notebook.ipynb
    ```python
    # Before: 2 panels
    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-   
+
    # After: 1 panel
    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
    ```
@@ -1048,7 +1347,7 @@ grep -n "Figure 4" notebook.ipynb
    ```python
    # Before
    plt.savefig('06_scaffold_l50_l90_comparison.png')
-   
+
    # After
    plt.savefig('06_scaffold_l50_comparison.png')
    ```
@@ -1062,4 +1361,3 @@ grep -n "Figure 4" notebook.ipynb
    ```bash
    rm figures/*_l50_l90_*.png
    ```
-

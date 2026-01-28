@@ -265,6 +265,49 @@ Bash: grep -c "import" *.py
 
 ---
 
+### 4.5. Safe Glob Patterns (Avoiding Syntax Errors)
+
+**Problem**: This pattern fails when no files match:
+```bash
+# ❌ WRONG - causes syntax error if no *.md files
+for file in *.md 2>/dev/null; do
+    cp "$file" backup/
+done
+```
+
+**Error**: `syntax error near unexpected token '2'`
+
+**Solution**: Use `nullglob` shell option:
+```bash
+# ✅ CORRECT - safely handles no matches
+shopt -s nullglob
+for pattern in "*.md" "*.sh" "*.txt"; do
+    for file in $pattern; do
+        cp "$file" backup/
+    done
+done
+shopt -u nullglob  # Restore default behavior
+```
+
+**Why This Works**:
+- `nullglob`: If glob pattern matches nothing, expand to empty string (no error)
+- `shopt -u nullglob`: Turn it back off after use (prevent side effects)
+
+**Alternative - Explicit Check**:
+```bash
+if ls *.md 1> /dev/null 2>&1; then
+    for file in *.md; do
+        cp "$file" backup/
+    done
+fi
+```
+
+**When to Use Each**:
+- **nullglob**: Multiple patterns in loop
+- **Explicit check**: Single pattern, need confirmation files exist
+
+---
+
 ### 5. Read Files with Limits
 
 **If you must read a file, use offset and limit parameters:**
@@ -535,18 +578,76 @@ Bash: echo "Single line content" > file.txt
 3. **Validation needed**: Need to verify content before changing
 4. **Interactive review**: User needs to see content before approving changes
 5. **Multi-step analysis**: Need to understand code structure first
+6. **Creating new content**: Use Write tool directly for new files with known content
+7. **Low-cost operations**: Directory listings, small file reads (< 100 lines)
+
+**Use Write tool directly (not bash scripts) when:**
+```python
+# ✅ CORRECT: Creating new file with structured content
+Write: /path/to/new-file.md
+# Content here...
+
+# ❌ OVER-ENGINEERED: Wrapping in Python/bash for no reason
+Bash: python3 << 'EOF'
+with open('/path/to/new-file.md', 'w') as f:
+    f.write('Content here...')
+EOF
+```
+
+**Use Claude's context for low-cost operations:**
+```bash
+# ✅ FINE: Simple directory listing (10-20 lines)
+ls -la
+
+# ✅ FINE: Read and edit small files (< 100 lines)
+Read: config.yaml  # 50 lines
+Edit: config.yaml  # Changes are clear and visible
+
+# ❌ WASTEFUL: Large log files, huge directories
+Read: /var/log/app.log  # 50K lines
+ls -laR /  # Entire filesystem
+```
+
+**Use bash + logging for critical data files:**
+```bash
+# ✅ CORRECT: Modifying genome statistics table
+LOG_FILE="genome_stats_modifications.log"
+echo "sed -i '' 's/NA/0/g' genome_stats.csv" >> "$LOG_FILE"
+sed -i '' 's/NA/0/g' genome_stats.csv
+
+# The log file tracks all operations for reproducibility
+# genome_stats_modifications.log:
+# sed -i '' 's/NA/0/g' genome_stats.csv
+# awk '{if ($5 != "") print}' genome_stats.csv > genome_stats_filtered.csv
+```
 
 **Example where Read/Edit is better:**
 ```python
-# Changing function signature requires understanding context
+# Code files: Always use Read/Edit to understand context
 Read: module.py
 Edit: module.py (update specific function while preserving structure)
+
+# Small data files: Changes are visible
+Read: config.yaml
+Edit: config.yaml (update configuration value)
 ```
 
 **Example where bash is better:**
 ```bash
-# Simple text replacement
-Bash: sed -i '' 's/old_api_url/new_api_url/g' config.py
+# Large data files: Efficient text replacement
+Bash: sed -i '' 's/old_value/new_value/g' large_dataset.csv
+
+# Critical data files: Log operations for auditability
+Bash: echo "sed -i '' 's/NA/0/g' genome_stats.csv" >> data_modifications.log
+Bash: sed -i '' 's/NA/0/g' genome_stats.csv
+```
+
+**Example where Write is better:**
+```python
+# Creating new documentation file
+Write: docs/new-guide.md
+# Full content...
+# (Not wrapped in bash/Python script)
 ```
 
 #### Token Savings Examples
@@ -691,12 +792,64 @@ subprocess.run([datasets_cmd, 'summary', ...])
 
 ### Key Principle for File Operations
 
-**Ask yourself first:**
-1. Can this be done with `cp`, `mv`, `sed`, `awk`, `grep`?
-2. Is the change purely textual (not logic-dependent)?
-3. Do I need to see the file content, or just modify it?
+**The Right Tool for the Job:**
 
-If answers are YES, YES, NO → **Use bash commands, not Read/Edit/Write**
+**For creating NEW files with known content:**
+- ✅ Use **Write tool** directly
+- ❌ Don't wrap in bash/Python scripts
+
+**For modifying EXISTING files:**
+- **Code files** → Always use **Read + Edit** (need to understand structure, preserve formatting)
+- **Small data files** (< 100 lines) → Read + Edit is fine (changes are visible)
+- **Large data files** → Use **bash commands** (`sed`, `awk`, `grep`) for efficiency
+- **Critical data files** (genome stats, enriched tables) → Use **bash commands + log file** for auditability
+
+**For understanding or complex edits:**
+- ✅ Use **Read + Edit tools**
+- ❌ Don't try to do complex logic in sed/awk
+
+**Decision tree:**
+1. **Creating new file?** → Use Write tool
+2. **Modifying code file?** → Use Read + Edit (always)
+3. **Modifying small data file** (< 100 lines)? → Read + Edit is fine
+4. **Modifying critical data file?** → Use sed/awk + log commands
+5. **Modifying large data file?** → Use sed/awk
+6. **Copying/moving files?** → Use cp/mv
+7. **Low-cost operation (< 100 lines output)?** → Use Claude context directly
+
+**Ask yourself:**
+1. Am I creating a new file? → Write tool
+2. Is this a code file (.py, .js, .xml, etc.)? → Read + Edit
+3. Is this a small data file (< 100 lines)? → Read + Edit is fine
+4. Is this critical data (genome stats, enriched tables)? → bash + log file
+5. Is this a large data file? → sed/awk
+
+**Logging pattern for critical data operations:**
+```bash
+# When modifying critical data files, log all operations
+LOG_FILE="data_modifications.log"
+
+# Pattern: Log command before execution
+echo "sed -i '' 's/old_value/new_value/g' genome_stats.csv" >> "$LOG_FILE"
+sed -i '' 's/old_value/new_value/g' genome_stats.csv
+
+# Or use tee to log and execute
+echo "awk '{if (NR==1 || \$3 > 100) print}' data.csv > filtered.csv" | tee -a "$LOG_FILE"
+awk '{if (NR==1 || $3 > 100) print}' data.csv > filtered.csv
+
+# Create log if it doesn't exist
+if [ ! -f "$LOG_FILE" ]; then
+    echo "# Data modification log - $(date)" > "$LOG_FILE"
+fi
+```
+
+**Log file format (simple, just commands):**
+```bash
+# genome_stats_modifications.log
+sed -i '' 's/NA/0/g' genome_stats.csv
+awk '{if ($5 != "") print}' genome_stats.csv > genome_stats_filtered.csv
+sed -i '' 's/Chromosome/Chr/g' genome_stats.csv
+```
 
 ---
 
@@ -1855,30 +2008,54 @@ grep -r "\"creator\"" . | head -5
 
 **Before ANY file operation, ask yourself:**
 
-1. **Can I use bash commands instead?** (cp, sed, awk, grep) → 99%+ token savings
-2. **Is this a simple text operation?** → Use sed/awk, not Read/Edit
-3. **Am I copying/merging files?** → Use cp/cat, not Read/Write
-4. **Can I check metadata first?** (file size, line count, modification time)
-5. **Can I filter before reading?** (grep, head, tail)
-6. **Can I read just the structure?** (first 50 lines, function names)
-7. **Can I summarize instead of showing raw data?**
-8. **Does the user really need the full content?**
+1. **Am I creating a NEW file?** → Use Write tool directly (don't wrap in bash/Python)
+2. **Is this a LOW-COST operation?** (< 100 lines output) → Use Claude context directly
+3. **Am I modifying a CODE file?** → Use Read + Edit (always, regardless of size)
+4. **Am I modifying a SMALL data file?** (< 100 lines) → Read + Edit is fine
+5. **Am I modifying CRITICAL DATA?** (genome stats, enriched tables) → Use bash + log file
+6. **Am I modifying a LARGE data file?** → Use bash commands (sed, awk, grep) → 99%+ token savings
+7. **Am I copying/merging files?** → Use cp/cat, not Read/Write
+8. **Can I check metadata first?** (file size, line count, modification time)
+9. **Can I filter before reading?** (grep, head, tail)
+10. **Can I read just the structure?** (first 50 lines, function names)
+11. **Can I summarize instead of showing raw data?**
+12. **Does the user really need the full content?**
 
 **Default strategy for file operations:**
 ```bash
-# FIRST: Try bash commands
-cp source.txt dest.txt                    # Instead of Read + Write
-sed -i '' 's/old/new/g' file.txt         # Instead of Read + Edit
-cat file1.txt file2.txt > combined.txt   # Instead of Read + Read + Write
-echo "text" >> file.txt                  # Instead of Read + Write (append)
+# CREATING NEW FILES: Use Write tool
+Write: /path/to/new-file.md
+# Content here...
+# (Not: python3 << 'EOF' ... write file ... EOF)
 
-# ONLY IF NEEDED: Read files
+# LOW-COST OPERATIONS: Use directly
+ls -la                                   # 20 lines is fine
+Read: small-config.yaml                  # < 100 lines is fine
+
+# MODIFYING CODE FILES: Always use Read + Edit
+Read: script.py                          # Any size - need to understand structure
+Edit: script.py                          # Preserve indentation, see changes
+
+# MODIFYING SMALL DATA FILES: Read + Edit is fine
+Read: config.yaml                        # < 100 lines
+Edit: config.yaml                        # Changes are visible
+
+# MODIFYING LARGE DATA FILES: Use bash commands
+sed -i '' 's/old/new/g' large-data.txt   # Efficient for large data files
+cp source.txt dest.txt                    # Instead of Read + Write
+cat file1.txt file2.txt > combined.txt   # Merge files
+
+# MODIFYING CRITICAL DATA: Use bash + log
+echo "sed -i '' 's/NA/0/g' genome_stats.csv" >> data_modifications.log
+sed -i '' 's/NA/0/g' genome_stats.csv     # Log for auditability
+
+# LARGE FILES: Filter first
 wc -l file.txt                           # Check size first
 head -20 file.txt                        # Read sample
 grep "pattern" file.txt | head -50       # Filter before reading
 
-# LAST RESORT: Full file read
-# Only when you need to understand code structure or complex logic
+# COMPLEX EDITS: Use Read + Edit
+# Only when you need to understand code structure or apply complex logic
 ```
 
 ---
@@ -2032,16 +2209,30 @@ mv *_intermediate.csv *_backup.csv *_old.csv tables/
 
 ## Summary
 
-**Core motto: Right model. Bash over Read. Filter first. Read selectively. Summarize intelligently.**
+**Core motto: Right model. Right tool. Filter first. Read selectively. Summarize intelligently.**
 
 **Model selection (highest impact):**
 - **Use Opus for learning/understanding** (one-time investment)
 - **Use Sonnet for development/debugging/implementation** (default)
 - This alone can save ~50% cost vs using Opus for everything
 
-**Primary optimization rule:**
-- **Use bash commands for file operations** (cp, sed, awk, grep) instead of Read/Edit/Write
-- This alone can save 99%+ tokens on file operations
+**Tool selection (primary optimization):**
+- **Creating NEW files** → Use Write tool directly (don't wrap in bash/Python)
+- **LOW-COST operations** (< 100 lines) → Use Claude context directly
+- **Modifying CODE files** → Use Read + Edit (always, regardless of size)
+- **Modifying SMALL data files** (< 100 lines) → Read + Edit is fine
+- **Modifying LARGE data files** → Use bash commands (sed, awk, grep)
+- **Modifying CRITICAL DATA** → Use bash commands + log file
+- **Complex edits** → Use Read + Edit tools
+
+**When to use bash commands:**
+- ✅ Large data files (efficiency)
+- ✅ Critical data files (auditability - log all operations)
+- ✅ Copying/moving files (cp, mv)
+- ✅ Filtering/searching (grep)
+- ❌ NOT for creating new files with structured content
+- ❌ NOT for code files (always use Read + Edit to understand structure)
+- ❌ NOT for small data files (< 100 lines - Read + Edit is clearer)
 
 **Secondary rules:**
 - Filter before reading (grep, head, tail)
