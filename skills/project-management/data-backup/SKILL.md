@@ -504,6 +504,60 @@ tar -czf "milestone_${DATE}_${NAME}.tar.gz" "${PROJECT_NAME}/"
 - Jupyter notebook workflows with generated figures
 - Research projects needing reproducibility (code + data + outputs)
 
+### Path Verification for Backups
+
+**Before creating milestone backups**, verify that files use relative paths:
+
+**Why this matters:**
+- Backups may be restored to different locations
+- Notebooks shared from backups must work for others
+- Absolute paths break when directory structure changes
+
+**Quick check:**
+```bash
+# Check for absolute paths in notebooks
+grep -l "/Users/" *.ipynb
+grep -l "C:\\\\" *.ipynb
+
+# Check in Python scripts
+grep -l "/Users/" python_scripts/*.py
+grep -l "/absolute/path" scripts/*.py
+```
+
+**What to look for:**
+- ❌ `/Users/yourname/project/data.csv` (absolute)
+- ✅ `data/data.csv` (relative)
+- ❌ `Image('/Users/you/figures/fig.png')` (absolute)
+- ✅ `Image('figures/fig.png')` (relative)
+
+**Fix before milestone backup:**
+```python
+# Script to check notebook paths
+import json
+import sys
+
+with open('analysis.ipynb', 'r') as f:
+    nb = json.load(f)
+
+has_absolute = False
+for i, cell in enumerate(nb['cells']):
+    if cell['cell_type'] == 'code':
+        source = ''.join(cell['source'])
+        if '/Users/' in source or 'C:\\\\' in source:
+            print(f"Cell {i}: Found absolute path")
+            print(source[:100])
+            has_absolute = True
+
+if not has_absolute:
+    print("✓ No absolute paths found")
+```
+
+**Best practice:**
+1. Run path check before milestone backups
+2. Fix any absolute paths found
+3. Test notebook runs from backup directory
+4. Then create milestone backup
+
 ## Troubleshooting
 
 ### Backup script not found

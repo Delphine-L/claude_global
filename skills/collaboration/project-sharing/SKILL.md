@@ -249,6 +249,70 @@ def clean_notebook(input_path, output_path):
 - Add docstrings if missing
 - Ensure paths are relative
 
+### Step 4.5: CRITICAL - Verify File Paths
+
+**Problem**: Notebooks and scripts with absolute paths will break when shared.
+
+**Check paths in notebooks:**
+```python
+# Search for absolute paths in notebook
+import json
+with open('analysis.ipynb', 'r') as f:
+    nb = json.load(f)
+
+abs_paths = []
+for cell in nb['cells']:
+    if cell['cell_type'] == 'code':
+        source = ''.join(cell['source'])
+        # Look for absolute paths
+        if '/Users/' in source or 'C:\\' in source:
+            abs_paths.append(source[:100])
+
+if abs_paths:
+    print("⚠️  Found absolute paths:")
+    for path in abs_paths[:5]:
+        print(f"  {path}")
+```
+
+**Common path issues:**
+
+| ❌ Breaks when shared | ✅ Works when shared |
+|---------------------|-------------------|
+| `/Users/yourname/project/data.csv` | `data/data.csv` |
+| `C:\Users\yourname\project\fig.png` | `figures/fig.png` |
+| `/absolute/path/to/results/` | `results/` |
+| `Image('/Users/you/notebook.png')` | `Image('figures/notebook.png')` |
+
+**Fix absolute paths before copying:**
+```python
+# Find and list absolute paths
+grep -r "/Users/" *.ipynb *.py
+grep -r "C:\\\\" *.ipynb *.py
+
+# Convert to relative paths (manual or scripted)
+# Example: /Users/yourname/project/data/ → data/
+```
+
+**Verification checklist:**
+1. ✅ All `pd.read_csv()` use relative paths
+2. ✅ All `Image()` displays use relative paths
+3. ✅ All figure saves use relative paths
+4. ✅ All data file references use relative paths
+5. ✅ Test notebook runs from different directory
+
+**Test before sharing:**
+```bash
+# Copy to temp location
+cp -r project /tmp/test-project
+cd /tmp/test-project
+
+# Try to run notebook
+jupyter notebook analysis.ipynb
+
+# Check if images load
+# Check if data files found
+```
+
 ### Step 5: Generate Documentation
 
 #### README.md Template

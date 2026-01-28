@@ -1311,6 +1311,125 @@ grep -n "Figure 4" notebook.ipynb
 
 **Why Critical**: Outdated documentation causes confusion. Notebook text saying "Limited data" when data is now complete, or not mentioning new statistical tests, misleads readers.
 
+## Exporting Notebooks for Sharing
+
+### Export Workflow for Distribution
+
+When preparing notebooks for sharing with collaborators or supplementary materials:
+
+**HTML Export (Recommended)**
+```bash
+# Activate environment with nbconvert
+conda activate your_env
+
+# Export to HTML (all figures embedded, opens in browser)
+python -m nbconvert --to html --output shared/Analysis.html Analysis.ipynb
+```
+
+**Why HTML is best for sharing:**
+- ✅ No software required - opens in any browser
+- ✅ All figures embedded (no missing images)
+- ✅ Self-contained single file
+- ✅ Fully interactive (shows code and outputs)
+- ✅ Works on any platform
+
+**LaTeX/PDF Export**
+```bash
+# Requires pandoc (install: conda install -c conda-forge pandoc)
+python -m nbconvert --to latex --output shared/Analysis.tex Analysis.ipynb
+
+# Then compile with xelatex (handles Unicode better than pdflatex)
+cd shared
+xelatex -interaction=nonstopmode Analysis.tex
+```
+
+**Common Issue: Nested Image Paths**
+
+nbconvert creates a `Analysis_files/` directory, but may nest it incorrectly:
+```bash
+# Problem: Images at Analysis_files/shared/Analysis_11_0.png
+# LaTeX looks for: shared/Analysis_files/shared/Analysis_11_0.png
+
+# Fix: Flatten the directory structure
+mv Analysis_files/shared/* Analysis_files/
+rmdir Analysis_files/shared
+
+# Recompile
+xelatex -interaction=nonstopmode Analysis.tex
+```
+
+**Prerequisites Check:**
+```bash
+# Check if pandoc installed
+conda list pandoc
+
+# Install if missing
+conda install -c conda-forge pandoc
+
+# For PDF, also need LaTeX
+# macOS: brew install basictex
+# Ubuntu: apt-get install texlive-xetex
+```
+
+### Path Verification Before Export
+
+**Critical: Verify all image and data paths work in export context**
+
+```python
+# In notebook, check if paths are relative (good) or absolute (bad)
+import os
+from pathlib import Path
+
+# ✅ GOOD: Relative paths work when notebook is moved
+display(Image('figures/fig1.png'))
+df = pd.read_csv('data/results.csv')
+
+# ❌ BAD: Absolute paths break when sharing
+display(Image('/Users/yourname/project/figures/fig1.png'))
+df = pd.read_csv('/Users/yourname/project/data/results.csv')
+```
+
+**Test before sharing:**
+1. Copy notebook to temporary directory
+2. Try to run it there
+3. Check all images load
+4. Verify data files found
+
+### Export Comparison
+
+| Format | Size | Requires Software | Figures | Best For |
+|--------|------|-------------------|---------|----------|
+| **HTML** | 3-5 MB | None (browser) | Embedded | Quick sharing, presentations |
+| **PDF** | Variable | PDF reader | Embedded | Print, formal documents |
+| **LaTeX** | 100 KB | LaTeX compiler | External | Editing, customization |
+| **ipynb** | 2-4 MB | Jupyter/VS Code | External | Reproducibility, collaboration |
+
+### Troubleshooting Exports
+
+**HTML export fails:**
+```bash
+# Missing nbconvert
+conda install -c conda-forge nbconvert
+
+# Missing pandoc
+conda install -c conda-forge pandoc
+```
+
+**PDF has missing figures:**
+- Check image paths are relative, not absolute
+- Verify images exist in expected locations
+- Look at `.log` file for specific errors
+
+**PDF compilation hangs:**
+- Large notebooks may timeout
+- Use HTML instead for very large analyses
+- Or split into smaller notebooks
+
+**Figures show as broken links:**
+- Images not found at specified paths
+- Convert absolute paths to relative paths
+- Ensure `figures/` directory included when sharing
+
 ## Best Practices Summary
 
 1. **Always check data availability** before creating analyses
