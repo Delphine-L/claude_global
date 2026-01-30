@@ -918,6 +918,118 @@ if n_group_a > n_group_b * 2:
     # Use subset for balanced comparison
 ```
 
+## Image Display and Responsive Scaling
+
+### Problem: Fixed-size images don't scale with notebook viewer window
+
+When adding images to Jupyter notebooks, you often want them to scale responsively with the viewing window size rather than display at a fixed size.
+
+### Solution Comparison
+
+**❌ SVG with IPython.display.SVG():**
+- Displays at native SVG size (fixed)
+- Cannot specify width parameter (raises ValueError)
+- Does not scale with window resizing
+```python
+from IPython.display import SVG, display
+display(SVG(filename='image.svg'))  # Fixed size, no scaling
+```
+
+**❌ PNG conversion attempts:**
+- ImageMagick may fail on complex SVG files with rendering errors
+- Example error: `non-conforming drawing primitive definition 'stroke-linecap'`
+- Conversion process adds complexity
+
+**✅ HTML img tag in markdown cell (RECOMMENDED):**
+```markdown
+<img src="path/to/image.svg" width="100%" style="max-width: 1200px; height: auto;" alt="Description">
+```
+
+Benefits:
+- Scales responsively to 100% of container width
+- `max-width` prevents oversized display on large screens
+- `height: auto` maintains aspect ratio
+- Works with both SVG and PNG formats
+- Browser handles rendering natively
+
+### Implementation Pattern
+
+Replace code cells using `display(Image(...))` or `display(SVG(...))` with markdown cells containing HTML:
+
+**Before (code cell):**
+```python
+from IPython.display import SVG, display
+display(SVG(filename='phylo/tree.svg'))
+```
+
+**After (markdown cell):**
+```markdown
+<img src="phylo/tree.svg" width="100%" style="max-width: 1200px; height: auto;" alt="Phylogenetic tree">
+```
+
+### When to Use Each Approach
+
+- **Markdown + HTML img**: Publication notebooks, figures that need responsive sizing
+- **IPython.display.Image()**: Quick exploration, when fixed PNG size is acceptable
+- **IPython.display.SVG()**: When you want maximum quality at native size and don't need scaling
+
+## SVG Manipulation
+
+### Cropping SVG Files Without External Tools
+
+SVG files can be cropped by modifying the `viewBox` and `width` attributes directly, avoiding ImageMagick or other conversion tools.
+
+**Use case**: Remove empty space from generated figures (e.g., iTOL phylogenetic trees with excess whitespace)
+
+**Method - Crop from right side:**
+```python
+import re
+
+# Read original SVG
+with open('original.svg', 'r') as f:
+    svg_content = f.read()
+
+# Calculate new dimensions (e.g., 30% width reduction)
+original_width = 2560
+crop_percentage = 30
+new_width = int(original_width * (100 - crop_percentage) / 100)  # 1792
+original_height = 1352  # Unchanged
+
+# Update width and viewBox attributes
+svg_content = re.sub(r'width="2560"', f'width="{new_width}"', svg_content)
+svg_content = re.sub(
+    r'viewBox="0,0,2560,1352"',
+    f'viewBox="0,0,{new_width},{original_height}"',
+    svg_content
+)
+
+# Save cropped version
+with open('original_cropped.svg', 'w') as f:
+    f.write(svg_content)
+```
+
+**How it works:**
+- `viewBox="x,y,width,height"` defines the coordinate system for SVG content
+- Reducing viewBox width crops from the right side (keeps left portion)
+- Updating `width` attribute ensures proper rendering size
+- Height remains unchanged to preserve vertical content
+
+**Alternative crops:**
+- **Left side**: `viewBox="crop_amount,0,new_width,height"`
+- **Both sides**: Center the viewBox `viewBox="left_crop,0,new_width,height"`
+
+**Advantages over ImageMagick:**
+- No external dependencies or conversion errors
+- Preserves vector quality (no rasterization)
+- Fast and lightweight
+- Works on any SVG file
+- Easy to iterate (try 20%, 30%, 40% crops)
+
+**Limitations:**
+- Only crops to rectangular regions
+- Doesn't handle complex transformations
+- May cut off content if not careful (iterate and check visually)
+
 ## Creating Analysis Notebooks for Scientific Publications
 
 When creating Jupyter notebooks to accompany manuscript figures:
@@ -1277,6 +1389,70 @@ with open('notebook.ipynb', 'w') as f:
 - Verify all cross-references still work
 - Update section numbering if needed
 
+
+### Bulk Find-and-Replace Operations
+
+**When Needed**:
+- Renumbering figures after deletions (Figure 6→5, Figure 7→6, etc.)
+- Updating terminology across multiple cells
+- Changing file paths or references
+
+**Pattern**: Use Python JSON manipulation for bulk updates across many cells
+
+```python
+import json
+
+# Load notebook
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+
+# Find and modify cells
+for i, cell in enumerate(nb['cells']):
+    if cell.get('cell_type') == 'markdown':
+        source = ''.join(cell.get('source', []))
+        
+        # Make replacements
+        new_source = source.replace('Figure 7', 'Figure 6')
+        new_source = new_source.replace('Figure 6', 'Figure 5')
+        
+        # Update cell source - split back to lines
+        cell['source'] = new_source.split('\n')
+        
+        # Preserve trailing newline if present
+        if cell['source'] and not cell['source'][-1]:
+            cell['source'][-1] = '\n'
+    
+    elif cell.get('cell_type') == 'code':
+        source = ''.join(cell.get('source', []))
+        
+        # Update image filenames
+        new_source = source.replace('06_telomere.png', '05_telomere.png')
+        cell['source'] = [new_source]
+
+# Save
+with open('notebook.ipynb', 'w') as f:
+    json.dump(nb, f, indent=1)
+```
+
+**Delete multiple cells** in reverse order to maintain indices:
+```python
+cells_to_delete = [10, 11, 12]  # Identified cell indices
+
+for idx in sorted(cells_to_delete, reverse=True):
+    print(f"Deleting cell {idx}")
+    del nb['cells'][idx]
+
+# Save after all deletions
+with open('notebook.ipynb', 'w') as f:
+    json.dump(nb, f, indent=1)
+```
+
+**Best Practice**: 
+- Use **NotebookEdit tool** for single-cell updates (cleaner, safer)
+- Use **Python JSON** for bulk operations affecting 5+ cells
+- Always work on a copy first when doing bulk operations
+- Test changes by reopening notebook in Jupyter
+
 ### Synchronizing Figure Code and Notebook Documentation
 
 **Pattern**: Code changes to figure generation → Must update notebook text
@@ -1310,6 +1486,62 @@ grep -n "Figure 4" notebook.ipynb
 ```
 
 **Why Critical**: Outdated documentation causes confusion. Notebook text saying "Limited data" when data is now complete, or not mentioning new statistical tests, misleads readers.
+
+### Preserving Newlines in Cell Source
+
+Jupyter notebook cells store source as a **list of strings**, where each string typically ends with `\n`.
+
+**Common pitfall**: String replacement that collapses multi-line code into a single string without newlines.
+
+**❌ Wrong - produces malformed code cell:**
+```python
+# This creates a single-line string without newlines
+cell['source'] = "# Comment\nimport pandas\ndf = pd.read_csv('file.csv')"
+# Result in notebook: "# Commentimport pandasdf = pd.read_csv('file.csv')"  ← No line breaks!
+```
+
+**✅ Correct - preserves line structure:**
+```python
+cell['source'] = [
+    "# Comment\n",
+    "import pandas\n",
+    "df = pd.read_csv('file.csv')"
+]
+# Result: Proper multi-line code cell with preserved formatting
+```
+
+**Debugging tip**: If a cell displays as single-line garbage, check the source format:
+```python
+print(repr(nb['cells'][26]['source']))  # Should show list with \n characters
+```
+
+**When updating cell content programmatically:**
+1. Always use list of strings format
+2. End each line with `\n` (except optionally the last)
+3. Test by viewing the notebook afterward
+
+**Example - Updating a cell while preserving formatting:**
+```python
+import json
+
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+
+# Find the cell to update
+for cell in nb['cells']:
+    if 'Final Tree.svg' in ''.join(cell.get('source', [])):
+        # Update filename while preserving line structure
+        cell['source'] = [
+            "# Display phylogenetic tree\n",
+            "from IPython.display import SVG, display\n",
+            "display(SVG(filename='phylo/Final Tree_cropped.svg'))"
+        ]
+
+with open('notebook.ipynb', 'w') as f:
+    json.dump(nb, f, indent=1)
+```
+
+**Key lesson**: When you see a cell that "seems off" or "the image is not displayed", check if the source is a single string without newlines. This is a common error when using string replacement on cell content.
 
 ## Exporting Notebooks for Sharing
 
