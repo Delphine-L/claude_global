@@ -487,6 +487,199 @@ pwd                        # Verify location
 
 ---
 
+## Streamlining Notebooks for Sharing
+
+When preparing Jupyter notebooks for sharing packages, remove verbose content while preserving essential analysis:
+
+### Content to Remove
+
+1. **Historical information**:
+   - "Comparison to previous analysis" sections
+   - "Earlier version" notes
+   - Revision history and change logs
+   - Update summaries
+
+2. **Excessive methodological detail**:
+   - Extended reconciliation discussions
+   - Overly detailed interpretations (>2000 chars)
+   - Redundant technical notes
+   - Multiple paragraphs explaining the same concept
+
+3. **Verbose analysis sections**:
+   - Repetitive explanations
+   - Extended discussions of minor points
+   - Implementation details better suited for code comments
+
+### Content to Keep
+
+1. **Essential analysis**:
+   - Figure displays and captions
+   - Statistical results
+   - Key findings summaries
+
+2. **Core documentation**:
+   - Methods sections
+   - Conclusions
+   - Data source descriptions
+   - Quality metrics
+
+3. **Reproduction information**:
+   - Setup instructions
+   - Script execution order
+   - Environment requirements
+
+### Automated Streamlining Script
+
+```python
+import nbformat
+import re
+
+def should_remove_cell(cell):
+    """Identify verbose cells to remove."""
+    if cell.cell_type != 'markdown':
+        return False
+
+    source = cell.source.lower()
+
+    # Patterns indicating verbose content
+    verbose_patterns = [
+        'comparison to.*previous',
+        'reconciliation with',
+        'why focus on',
+        'methodological.*note.*filtering',
+        'interpretation of the significant difference',
+    ]
+
+    for pattern in verbose_patterns:
+        if re.search(pattern, source):
+            return True
+
+    # Remove overly long cells without figures
+    if len(source) > 2000 and 'figure' not in source.lower():
+        return True
+
+    return False
+
+def streamline_notebook(input_path, output_path):
+    """Remove verbose content from notebook."""
+    with open(input_path, 'r') as f:
+        nb = nbformat.read(f, as_version=4)
+
+    # Filter out verbose cells
+    nb.cells = [cell for cell in nb.cells if not should_remove_cell(cell)]
+
+    with open(output_path, 'w') as f:
+        nbformat.write(nb, f)
+```
+
+### Expected Results
+
+- **Cell reduction**: 7-15% of cells typically removed
+- **Size reduction**: 15-20% smaller HTML files
+- **Quality improvement**: More professional, focused presentation
+- **No loss**: All essential content preserved
+
+### Verification Checklist
+
+After streamlining:
+- [ ] All figures still referenced
+- [ ] Statistical results present
+- [ ] Methods sections complete
+- [ ] Conclusions included
+- [ ] HTML conversion successful
+- [ ] No broken cells or formatting
+
+---
+
+## Quality Assurance for Sharing Packages
+
+After creating a sharing package, verify completeness:
+
+### 1. Structure Verification
+
+```bash
+# Check directory structure
+find package/ -type d | sort
+
+# Expected structure:
+# package/
+# ├── notebooks/
+# ├── scripts/
+# ├── data/
+# ├── figures/
+# └── documentation/
+```
+
+### 2. File Count Verification
+
+```bash
+# Count files by type
+echo "Notebooks: $(find package/ -name '*.ipynb' | wc -l)"
+echo "Scripts: $(find package/ -name '*.py' | wc -l)"
+echo "Data files: $(find package/ -name '*.csv' | wc -l)"
+echo "Figures: $(find package/ -name '*.png' | wc -l)"
+echo "Documentation: $(find package/ -name '*.md' | wc -l)"
+```
+
+### 3. Path Verification
+
+Test that notebook paths work:
+```bash
+cd package/notebooks/
+# Try to convert notebooks (tests paths)
+for nb in *.ipynb; do
+    jupyter nbconvert --to html "$nb" --output /tmp/test.html 2>&1 | \
+        grep -E "(Error|FileNotFound)" && echo "ERROR in $nb" || echo "OK: $nb"
+done
+```
+
+### 4. Documentation Checklist
+
+Verify documentation is complete:
+- [ ] README.md with setup instructions
+- [ ] MANIFEST.md listing all files
+- [ ] Environment specification (environment.txt or .yml)
+- [ ] License file (if applicable)
+- [ ] Citation information
+- [ ] Data source documentation
+
+### 5. Create Verification Notes
+
+Document package status:
+```markdown
+# VERIFICATION_NOTES.md
+
+## Package Contents
+- Notebooks: X files
+- Scripts: Y files
+- Data: Z MB
+- Figures: N/M present
+
+## Known Limitations
+- Missing figures can be generated using scripts X, Y, Z
+- Platform-specific environment file
+
+## Testing
+- [ ] Notebooks load correctly
+- [ ] Paths work from notebooks/
+- [ ] HTML conversion successful
+- [ ] All essential files present
+```
+
+### 6. Size Check
+
+```bash
+# Check package size
+du -sh package/
+
+# Ideal sizes:
+# Level 1 (Summary): <5 MB
+# Level 2 (Reproducible): 5-50 MB
+# Level 3 (Full): varies
+```
+
+---
+
 ## Best Practices
 
 ### Notebook Cleaning
@@ -802,6 +995,217 @@ if __name__ == '__main__':
 8. ⚠️ **Work in main directory** - After creating sharing package, ALL future work happens in the original project directory, NOT in the sharing folder
 
 **Remember:** Good sharing practices benefit both collaborators and your future self!
+
+---
+
+## Correcting Cleanup Mistakes
+
+### Identifying Missing Files After Cleanup
+
+When users report missing figures, scripts, or resources after a cleanup:
+
+1. **Check notebook/code references systematically**:
+   ```bash
+   # Find all image references in notebooks
+   grep -n "\.png\|Image(\|display(" notebook.ipynb
+
+   # Find script imports
+   grep -n "import\|from.*import\|\.py" notebook.ipynb
+
+   # Find data file references
+   grep -n "\.csv\|\.tsv\|\.json" notebook.ipynb
+   ```
+
+2. **Search deprecated folders**:
+   ```bash
+   # Find specific files
+   find deprecated -name "*pattern*" -type f
+
+   # Search by file type
+   find deprecated -name "*.png" -o -name "*.py"
+   ```
+
+3. **Check original location**:
+   ```bash
+   # Sometimes files are in unexpected locations
+   find . -name "phylogenetic_tree*"
+   ```
+
+### Restoration Workflow
+
+1. **Verify the file is truly needed**:
+   - Check if it's referenced in active notebooks
+   - Confirm it's not redundant with other files
+   - Check if other notebooks also use it
+
+2. **Restore systematically**:
+   ```bash
+   # Restore to original location
+   cp deprecated/path/to/file.png figures/target/
+
+   # Update sharing packages if they exist
+   cp deprecated/path/to/file.png sharing-package/figures/target/
+   ```
+
+3. **Document the restoration**:
+   - Create a restoration summary document
+   - List what was restored and why
+   - Update MINIMAL_ESSENTIAL_FILES.md or equivalent
+
+### Example: Figure Restoration
+
+```bash
+# 1. Identify missing figures from notebook
+grep -o "'[^']*\.png'" Curation_Impact_Analysis.ipynb
+
+# 2. Find them in deprecated
+find deprecated -name "05_terminal_telomeres.png"
+
+# 3. Restore systematically
+for fig in 05_terminal_telomeres.png 07_chromosome_assignment_comparison.png; do
+    cp "deprecated/figures/curation_impact/$fig" figures/curation_impact/
+    cp "deprecated/figures/curation_impact/$fig" shared-package/figures/curation_impact/
+done
+
+# 4. Verify restoration
+ls -lh figures/curation_impact/*.png | wc -l  # Should match expected count
+```
+
+### Prevention: Better Cleanup Verification
+
+Before finalizing cleanup:
+
+1. **Grep all notebooks for references**:
+   ```bash
+   # Find all figure references across notebooks
+   grep -h "\.png" *.ipynb | sort | uniq
+   ```
+
+2. **Cross-reference with existing files**:
+   ```bash
+   # Compare referenced vs existing
+   comm -13 <(ls figures/*/*.png | sort) <(grep -oh "[^/]*\.png" *.ipynb | sort | uniq)
+   ```
+
+3. **Test notebook execution** (if feasible):
+   - Open each notebook
+   - Check that all figures load
+   - Verify no broken image references
+
+**Lesson**: Always verify notebook dependencies before moving files to deprecated. Use grep to find all references before cleanup operations.
+
+---
+
+## Deprecating Redundant Notebooks
+
+### Identifying Redundancy
+
+A notebook may be redundant if:
+- **Content overlaps** with another notebook
+- **No unique figures**: All visualizations come from shared directories
+- **No unique scripts**: All code is shared with other analyses
+- **No unique data**: Uses the same datasets as other notebooks
+
+### Dependency Analysis Workflow
+
+Before deprecating a notebook, check what it uses:
+
+```bash
+# 1. Check figure references
+grep -o "Image(filename.*\.png" notebook.ipynb | sort | uniq
+
+# 2. Check if figures are unique or shared
+for fig in $(grep -oh "[^/]*\.png" notebook.ipynb); do
+    grep -l "$fig" *.ipynb | grep -v notebook.ipynb
+done
+
+# 3. Check data file usage
+grep -o "read_csv.*\.csv" notebook.ipynb
+
+# 4. Check script imports (if any)
+grep -o "^import\|^from.*import" notebook.ipynb
+```
+
+### Safe Deprecation Process
+
+1. **Document the notebook's purpose**:
+   - What analysis does it perform?
+   - Why was it created?
+   - What makes it redundant now?
+
+2. **Verify no unique dependencies**:
+   ```bash
+   # Check figures
+   figures_used=$(grep -oh "[^'\"]*\.png" notebook_to_deprecate.ipynb | sort | uniq)
+
+   # Check if any are unique to this notebook
+   for fig in $figures_used; do
+       other_notebooks=$(grep -l "$fig" *.ipynb | grep -v notebook_to_deprecate | wc -l)
+       if [ "$other_notebooks" -eq 0 ]; then
+           echo "WARNING: $fig is only used by this notebook"
+       fi
+   done
+   ```
+
+3. **Move notebook only** (if no unique dependencies):
+   ```bash
+   # Move notebook to deprecated
+   mv Redundant_Notebook.ipynb deprecated/
+
+   # Remove from sharing packages
+   rm -f sharing-package/notebooks/Redundant_Notebook.ipynb
+   ```
+
+4. **Document the deprecation**:
+   Create a `DEPRECATION_SUMMARY.md`:
+   ```markdown
+   # Notebook Deprecation: [Name]
+
+   **Date**: YYYY-MM-DD
+   **Reason**: [Brief explanation]
+
+   ## Analysis
+   - Figures: [all shared/unique ones moved]
+   - Scripts: [all shared/unique ones moved]
+   - Data: [all shared]
+
+   ## Files Moved
+   - Notebook: [path] → deprecated/
+   - Figures: [none/list]
+   - Scripts: [none/list]
+
+   ## Active Notebooks
+   [List remaining active notebooks]
+
+   ## Restoration
+   ```bash
+   cp deprecated/Notebook.ipynb .
+   ```
+   ```
+
+### Example: Both_Haplotypes Deprecation
+
+```bash
+# 1. Check dependencies
+grep "\.png" Curation_Impact_Analysis_Both_Haplotypes.ipynb
+# Result: All figures from figures/curation_impact/
+
+grep "\.png" Curation_Impact_Analysis.ipynb
+# Result: Same figures - confirmed shared
+
+# 2. Check data files
+grep "\.csv" Curation_Impact_Analysis_Both_Haplotypes.ipynb
+# Result: vgp_assemblies_unified.csv (shared with main notebook)
+
+# 3. Safely deprecate (notebook only, no other files)
+mv Curation_Impact_Analysis_Both_Haplotypes.ipynb deprecated/
+rm shared-package/notebooks/Curation_Impact_Analysis_Both_Haplotypes.ipynb
+
+# 4. Document
+echo "All figures, scripts, and data remain active (shared)" > documentation/DEPRECATION_SUMMARY.md
+```
+
+**Key Principle**: Only move the notebook if ALL dependencies are shared with active notebooks. Never move shared resources to deprecated.
 
 ---
 

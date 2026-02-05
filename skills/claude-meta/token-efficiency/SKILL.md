@@ -2207,6 +2207,68 @@ mv *_intermediate.csv *_backup.csv *_old.csv tables/
 
 ---
 
+## Efficient File Operations
+
+### Moving Multiple Files Safely
+
+When moving files where some might not exist, use loops with file existence checks to avoid errors and provide clean execution:
+
+**Inefficient (fails on missing files):**
+```bash
+mv file1.py file2.py file3.py destination/  # Fails if any missing
+```
+
+**Efficient (handles missing files gracefully):**
+```bash
+for f in file1.py file2.py file3.py; do
+  if [ -f "$f" ]; then
+    mv "$f" destination/ && echo "Moved $f"
+  fi
+done
+```
+
+**For pattern-based moves:**
+```bash
+# Instead of: mv fix_*.py deprecated/  # Might error
+for f in fix_*.py; do
+  [ -f "$f" ] && mv "$f" deprecated/
+done
+```
+
+**Benefits:**
+- No errors from missing files
+- Clean output showing what was actually moved
+- Safe for batch operations with partial file lists
+- Easy to adapt for copy, remove, or other operations
+
+**Token efficiency:**
+- Single-pass execution (no retry needed for errors)
+- Clean output (only successful operations logged)
+- Scriptable and reliable for automation
+
+### Searching Jupyter Notebooks Efficiently
+
+Notebooks contain embedded output data that inflates file size. Use grep instead of Read:
+
+```bash
+# Instead of reading entire 4MB notebook:
+# Read(notebook.ipynb)  # DON'T - wastes tokens on output data
+
+# Use targeted grep:
+grep "Image(filename" notebook.ipynb          # Find image references
+grep "read_csv" notebook.ipynb                 # Find data file usage
+grep -A 5 "^## Methods" notebook.ipynb        # Get specific sections
+```
+
+**Token savings**: Reading a 4MB notebook with outputs = ~50K tokens. Grep for specific patterns = ~500 tokens. **100x reduction**.
+
+**Best practices:**
+- Only use Read tool for notebooks if you need to see cell structure or outputs
+- For finding references (figures, data files, imports), always use grep
+- For extracting sections, use grep with context (-A, -B, -C flags)
+
+---
+
 ## Summary
 
 **Core motto: Right model. Right tool. Filter first. Read selectively. Summarize intelligently.**

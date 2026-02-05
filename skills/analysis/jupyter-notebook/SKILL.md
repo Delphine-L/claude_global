@@ -222,6 +222,253 @@ NotebookEdit(
 )
 ```
 
+## Analyzing Notebook Figure Usage
+
+To identify which figures are actually displayed/used in a notebook (useful for project cleanup):
+
+### Extracting Figure References
+
+```bash
+# Extract figure paths from notebook JSON
+grep -o "figures/[^'\"]*\.png" Notebook.ipynb | sort -u
+
+# For Image() calls with filename parameter
+grep "Image(filename=" Notebook.ipynb | grep -o "figures/[^'\"]*\.png"
+
+# For display(Image(...)) patterns
+grep "display(Image" Notebook.ipynb | grep -o "figures/[^'\"]*\.png"
+```
+
+### Analyzing Multiple Notebooks
+
+```bash
+for nb in *.ipynb; do
+    echo "=== $nb ==="
+    grep -o "figures/[^'\"]*\.png" "$nb" | sort -u
+    echo ""
+done > /tmp/all_used_figures.txt
+```
+
+### Common Figure Display Patterns to Search
+
+- `Image(filename='figures/...')`  # Direct Image calls
+- `display(Image(filename='...'))`  # Display wrapper
+- `![Figure](figures/...)`  # Markdown cells
+- `<img src="figures/...">`  # HTML in markdown cells
+
+### Additional Quick Reference Commands
+
+```bash
+# Method 1: Simple grep for .png files
+grep -o "\.png" notebook.ipynb | grep -v "image/png" | sort | uniq
+
+# Method 2: Extract Image() calls with filenames
+grep "Image(filename" notebook.ipynb | grep -o "'[^']*\.png'"
+
+# Method 3: Find all display() calls with images
+grep -n "\.png\|Image(\|display(" notebook.ipynb
+
+# Method 4: Check multiple notebooks at once
+for nb in *.ipynb; do
+    echo "=== $nb ==="
+    grep -o "[^'\"]*\.png" "$nb" | sort | uniq
+done
+```
+
+### Cross-referencing Figures Across Notebooks
+
+Check if figures are shared or unique:
+
+```bash
+# Find which notebooks use a specific figure
+figure="01_scaffold_n50.png"
+grep -l "$figure" *.ipynb
+
+# Check if a notebook has unique figures
+notebook="Analysis.ipynb"
+for fig in $(grep -oh "[^'\"]*\.png" "$notebook"); do
+    count=$(grep -l "$fig" *.ipynb | wc -l)
+    if [ "$count" -eq 1 ]; then
+        echo "UNIQUE: $fig"
+    else
+        echo "SHARED: $fig (used by $count notebooks)"
+    fi
+done
+```
+
+### Use Cases
+
+- **Project cleanup**: Identify unused figures for archiving
+- **Dependency analysis**: Verify figure generation scripts are needed
+- **Documentation**: Map figures to notebooks that use them
+- **Validation**: Ensure all referenced figures exist
+
+### Example Workflow
+
+```bash
+# 1. Find all figures referenced in notebooks
+grep -o "figures/[^'\"]*\.png" *.ipynb | sort -u > used_figures.txt
+
+# 2. Find all existing figures
+find figures/ -name "*.png" > all_figures.txt
+
+# 3. Identify unused figures (those in all_figures but not in used_figures)
+comm -23 <(sort all_figures.txt) <(sort used_figures.txt) > unused_figures.txt
+```
+
+---
+
+## Path Management for Notebooks in Subdirectories
+
+When notebooks are in a `notebooks/` subdirectory (common in sharing packages), use relative paths:
+
+### Problem
+
+Notebooks developed in project root use paths like:
+```python
+FIG_DIR = Path('figures/curation_impact')
+DATA_FILE = 'data/dataset.csv'
+```
+
+These fail when notebooks are moved to `notebooks/` subdirectory.
+
+### Solution
+
+Update paths programmatically using nbformat:
+
+```python
+import nbformat
+
+def update_notebook_paths(notebook_path):
+    """Update paths to work from notebooks/ directory."""
+    with open(notebook_path, 'r') as f:
+        nb = nbformat.read(f, as_version=4)
+
+    for cell in nb.cells:
+        if cell.cell_type == 'code':
+            # Update figure paths
+            cell.source = cell.source.replace(
+                "Path('figures/",
+                "Path('../figures/"
+            )
+            # Update data paths
+            cell.source = cell.source.replace(
+                "'data/",
+                "'../data/"
+            )
+
+    with open(notebook_path, 'w') as f:
+        nbformat.write(nb, f)
+```
+
+### Best Practice
+
+In sharing packages, use structure:
+```
+project/
+├── notebooks/        # Notebooks here
+│   └── analysis.ipynb
+├── figures/          # Figures here
+├── data/            # Data here
+└── scripts/         # Scripts here
+```
+
+Notebooks access files using `../`:
+```python
+FIG_DIR = Path('../figures/subfolder')
+data = pd.read_csv('../data/dataset.csv')
+```
+
+### Verification
+
+Test paths work:
+```bash
+cd notebooks/
+jupyter nbconvert --to html --execute notebook.ipynb
+```
+
+If paths are correct, notebook executes without FileNotFoundError.
+
+---
+
+## Generating HTML for Documentation
+
+When notebooks are for documentation only or contain references to figures that need to be generated:
+
+### Convert Without Execution
+
+```bash
+# Generate HTML from current notebook state
+jupyter nbconvert --to html notebook.ipynb --output-dir output/
+```
+
+This creates viewable HTML files without running code cells, useful for:
+- Documentation notebooks with pre-generated figures
+- Sharing notebooks before figure generation
+- Quick previews during development
+
+### Convert With Execution
+
+When all dependencies are available:
+```bash
+# Execute and convert
+jupyter nbconvert --to html --execute notebook.ipynb \
+    --output-dir output/ \
+    --ExecutePreprocessor.timeout=600
+```
+
+### Batch Conversion
+
+Convert multiple notebooks:
+```bash
+for nb in notebooks/*.ipynb; do
+    jupyter nbconvert --to html "$nb" --output-dir notebooks/
+done
+```
+
+### Benefits of HTML Sharing
+
+1. **No setup required**: Recipients can view immediately in browser
+2. **Self-contained**: Includes all outputs and styling
+3. **Professional**: Clean formatting with syntax highlighting
+4. **Preserves outputs**: Shows results without re-running code
+
+---
+
+## Preparing Notebooks for Sharing
+
+Remove outputs before sharing to reduce file size and avoid exposing intermediate results:
+
+```python
+import nbformat
+
+def clean_notebook(input_path, output_path):
+    """Remove outputs and execution counts."""
+    with open(input_path, 'r') as f:
+        nb = nbformat.read(f, as_version=4)
+
+    for cell in nb.cells:
+        if cell.cell_type == 'code':
+            cell.outputs = []
+            cell.execution_count = None
+
+    with open(output_path, 'w') as f:
+        nbformat.write(nb, f)
+
+# Clean all notebooks in directory
+from pathlib import Path
+for nb_file in Path('notebooks').glob('*.ipynb'):
+    clean_notebook(nb_file, f"cleaned/{nb_file.name}")
+```
+
+Benefits:
+- Smaller file sizes
+- No accidental data leakage
+- Clean starting point for users
+- Git-friendly (fewer diffs)
+
+---
+
 ## Common Pitfalls
 
 ### Variable Shadowing in Loops
