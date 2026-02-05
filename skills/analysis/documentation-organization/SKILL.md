@@ -265,6 +265,85 @@ EXCLUDE_DIRS = ['progress', 'action_reports', 'todos', 'internal',
 INCLUDE_DIRS = ['data_descriptions', 'methods', 'results', 'reference']
 ```
 
+## Sharing Package Integration
+
+### Directory-Based Filtering (Recommended)
+
+When creating sharing packages from projects with organized documentation:
+
+**Advantages**:
+- Simple and maintainable (no complex pattern matching)
+- Clear intent (directory name = purpose)
+- Easy to audit (just look at directory list)
+- Scalable (add new categories without updating filters)
+
+**Implementation in share-project command**:
+
+```python
+def ignore_internal_dirs(dir, files):
+    """Exclude internal documentation directories."""
+    ignore_list = []
+    for item in files:
+        # Exclude internal directories
+        if item in ['progress', 'action_reports', 'todos', 'internal',
+                   'deprecated', 'logs', 'working_files', 'temp', 'tmp']:
+            ignore_list.append(item)
+        # Exclude hidden files except .gitkeep
+        elif item.startswith('.') and item != '.gitkeep':
+            ignore_list.append(item)
+    return ignore_list
+
+shutil.copytree("documentation", f"{SHARE_DIR}/documentation",
+                ignore=ignore_internal_dirs,
+                dirs_exist_ok=True)
+```
+
+**Quick Reference**:
+- **Include**: `data_descriptions/`, `methods/`, `results/`, `reference/`
+- **Exclude**: `progress/`, `action_reports/`, `todos/`, `internal/`, `deprecated/`
+
+### Migration from File-Pattern to Directory-Based
+
+If migrating from file-pattern matching:
+
+1. **Categorize existing files** by purpose:
+   - What helps recipients understand the project? → shareable
+   - What tracks development progress? → internal
+
+2. **Move files** to appropriate directories:
+```bash
+# Example migration
+mv CORRECTIONS_COMPLETE.md documentation/action_reports/
+mv ANALYSIS_SUMMARY.md documentation/results/
+mv README_KARYOTYPE_FETCH.md documentation/methods/
+```
+
+3. **Update share-project command**: Replace pattern matching with directory inclusion/exclusion
+
+4. **Update project README**: Explain new organization to team
+
+### Why This Approach?
+
+**Before (file-pattern matching)**:
+```python
+# Complex, hard to maintain, easy to miss files
+exclude_patterns = [
+    '*CORRECTION*', '*UPDATE*', '*VERIFICATION*', '*REGENERATION*',
+    '*RESTORATION*', '*PROGRESS*', '*SESSION*', '*RESUME*',
+    '*PRIORITY*', '*TODO*', '*TASK*', '*ESSENTIAL*', '*ISSUE*',
+    '*FIXES*', '*COHERENCE*', '*DEPRECATED*', '*CLEANUP*',
+    '*MIGRATION*', # ... and many more
+]
+```
+
+**After (directory-based)**:
+```python
+# Simple, clear, maintainable
+exclude_dirs = ['progress', 'action_reports', 'todos', 'internal', 'deprecated']
+```
+
+**Impact**: In practice, this approach eliminated 15+ incorrectly shared files and reduced maintenance complexity from 50+ patterns to 5 directories.
+
 ## Benefits
 
 1. **Clear Organization**: Easy to find documents during development

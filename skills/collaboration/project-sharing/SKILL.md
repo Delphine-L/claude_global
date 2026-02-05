@@ -249,32 +249,123 @@ def clean_notebook(input_path, output_path):
 - Add docstrings if missing
 - Ensure paths are relative
 
-### Step 4.5: CRITICAL - Verify File Paths
+### Step 4.5: CRITICAL - Verify and Fix File Paths
 
-**Problem**: Notebooks and scripts with absolute paths will break when shared.
+**Problem**: Notebooks and scripts with broken file paths will fail when shared. This happens when:
+- Files are reorganized (e.g., `phylo/` merged into `figures/`)
+- Paths reference parent directories no longer in package
+- Data files moved to different subdirectories
+- Absolute paths are used instead of relative paths
 
-**Check paths in notebooks:**
+#### Automatic Path Verification Script
+
+Add this comprehensive verification step in share-project command:
+
 ```python
-# Search for absolute paths in notebook
 import json
-with open('analysis.ipynb', 'r') as f:
-    nb = json.load(f)
+import os
+import re
+from pathlib import Path
 
-abs_paths = []
-for cell in nb['cells']:
-    if cell['cell_type'] == 'code':
-        source = ''.join(cell['source'])
-        # Look for absolute paths
-        if '/Users/' in source or 'C:\\' in source:
-            abs_paths.append(source[:100])
+print("\n🔍 Verifying file paths in notebooks...")
 
-if abs_paths:
-    print("⚠️  Found absolute paths:")
-    for path in abs_paths[:5]:
-        print(f"  {path}")
+# Find all notebooks
+notebooks = []
+for root, dirs, files in os.walk(SHARE_DIR):
+    for file in files:
+        if file.endswith('.ipynb'):
+            notebooks.append(os.path.join(root, file))
+
+# Check paths in each notebook
+for notebook_path in notebooks:
+    with open(notebook_path, 'r') as f:
+        nb = json.load(f)
+
+    issues_found = []
+
+    for cell_idx, cell in enumerate(nb['cells']):
+        if cell['cell_type'] == 'code':
+            source = ''.join(cell['source'])
+
+            # Check for file references
+            patterns = {
+                'read_csv': r'read_csv\([\'"]([^\'")]+)[\'"]',
+                'Image': r'Image\(filename=[\'"]([^\'")]+)[\'"]',
+                'imread': r'imread\([\'"]([^\'")]+)[\'"]',
+                'to_csv': r'to_csv\([\'"]([^\'")]+)[\'"]',
+                'savefig': r'savefig\([\'"]([^\'")]+)[\'"]',
+            }
+
+            for pattern_name, pattern in patterns.items():
+                matches = re.findall(pattern, source)
+                for match in matches:
+                    # Determine full path
+                    notebook_dir = os.path.dirname(notebook_path)
+                    if notebook_dir == SHARE_DIR:
+                        referenced_path = os.path.join(SHARE_DIR, match)
+                    else:
+                        referenced_path = os.path.normpath(
+                            os.path.join(notebook_dir, match)
+                        )
+
+                    # Check if file exists
+                    if not os.path.exists(referenced_path):
+                        # Try to find file in package
+                        filename = os.path.basename(match)
+                        found_paths = []
+                        for root, dirs, files in os.walk(SHARE_DIR):
+                            if filename in files:
+                                found_paths.append(
+                                    os.path.relpath(
+                                        os.path.join(root, filename),
+                                        notebook_dir if notebook_dir != SHARE_DIR else SHARE_DIR
+                                    )
+                                )
+
+                        issues_found.append({
+                            'cell': cell_idx + 1,
+                            'type': pattern_name,
+                            'path': match,
+                            'suggestions': found_paths
+                        })
+
+    # Report issues
+    if issues_found:
+        print(f"\n⚠️  {os.path.basename(notebook_path)}:")
+        for issue in issues_found:
+            print(f"  Cell {issue['cell']}: {issue['type']}('{issue['path']}')")
+            if issue['suggestions']:
+                print(f"    ✅ Suggested fix: {issue['suggestions'][0]}")
+            else:
+                print(f"    ❌ File not found in package")
+
+# If issues found, offer to fix them automatically
+if any_issues_found:
+    print("\n🔧 Fix these paths before sharing? (manual or automatic)")
 ```
 
-**Common path issues:**
+#### Automated Path Correction
+
+```python
+def fix_notebook_paths(notebook_path, path_corrections):
+    """Fix file paths in notebook automatically."""
+    with open(notebook_path, 'r') as f:
+        nb = json.load(f)
+
+    for cell in nb['cells']:
+        if cell['cell_type'] == 'code':
+            source = ''.join(cell['source'])
+            # Apply corrections
+            for old_path, new_path in path_corrections.items():
+                source = source.replace(f"'{old_path}'", f"'{new_path}'")
+                source = source.replace(f'"{old_path}"', f'"{new_path}"')
+            cell['source'] = source.split('\n')
+
+    with open(notebook_path, 'w') as f:
+        json.dump(nb, f, indent=1)
+```
+
+#### Common Path Issues
 
 | ❌ Breaks when shared | ✅ Works when shared |
 |---------------------|-------------------|
@@ -282,36 +373,47 @@ if abs_paths:
 | `C:\Users\yourname\project\fig.png` | `figures/fig.png` |
 | `/absolute/path/to/results/` | `results/` |
 | `Image('/Users/you/notebook.png')` | `Image('figures/notebook.png')` |
+| `phylo/tree.svg` (old location) | `figures/curation_impact/tree.svg` (new) |
+| `read_csv('file.csv')` (missing dir) | `read_csv('data/file.csv')` |
 
-**Fix absolute paths before copying:**
-```python
-# Find and list absolute paths
-grep -r "/Users/" *.ipynb *.py
-grep -r "C:\\\\" *.ipynb *.py
+#### Verification Checklist
 
-# Convert to relative paths (manual or scripted)
-# Example: /Users/yourname/project/data/ → data/
-```
-
-**Verification checklist:**
 1. ✅ All `pd.read_csv()` use relative paths
 2. ✅ All `Image()` displays use relative paths
 3. ✅ All figure saves use relative paths
 4. ✅ All data file references use relative paths
-5. ✅ Test notebook runs from different directory
+5. ✅ Files exist at referenced paths
+6. ✅ Paths work from notebook location
+7. ✅ Test notebook runs from different directory
 
-**Test before sharing:**
+#### Testing Before Sharing
+
 ```bash
 # Copy to temp location
 cp -r project /tmp/test-project
 cd /tmp/test-project
 
-# Try to run notebook
-jupyter notebook analysis.ipynb
+# Try to open notebook and check for errors
+jupyter nbconvert --to html notebook.ipynb 2>&1 | grep -i error
 
-# Check if images load
-# Check if data files found
+# Or open in Jupyter and verify images load
+jupyter lab notebook.ipynb
 ```
+
+#### Benefits of Automatic Verification
+
+- **Catches broken paths** before distribution
+- **Suggests correct paths** automatically
+- **Finds missing files** in package
+- **Prevents "file not found" errors** for recipients
+- **Professional, polished packages**
+
+#### When to Run
+
+- **Always** run as part of share-project command (Step 5.5)
+- After any file reorganization
+- Before final package distribution
+- After moving notebooks to sharing directory
 
 ### Step 5: Generate Documentation
 

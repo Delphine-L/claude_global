@@ -264,6 +264,153 @@ ln -s $CLAUDE_METADATA/commands/your-category/command-name.md /tmp/test-project/
 
 ---
 
+## Command Help System
+
+### Viewing Command Documentation
+
+Use `/command-help` to view documentation for Claude Code commands (similar to `--help` in traditional CLI tools):
+
+```bash
+# List all available commands
+/command-help list
+
+# Show specific command help
+/command-help share-project
+
+# Show full details including implementation steps
+/command-help share-project --full
+```
+
+### Command Help Implementation
+
+**Location**: `$CLAUDE_METADATA/commands/global/command-help.md`
+
+**Features**:
+- Lists global and project commands with descriptions
+- Shows usage, parameters, and examples
+- Can display full implementation steps with `--full` flag
+- Searches in both global and project command directories
+
+**Key code patterns**:
+
+```bash
+# Find command in global or project directories
+find_command() {
+    local cmd_name="$1"
+
+    # Check global commands
+    if [ -f "$GLOBAL_COMMANDS/${cmd_name}.md" ]; then
+        echo "$GLOBAL_COMMANDS/${cmd_name}.md"
+        return 0
+    fi
+
+    # Check project commands
+    if [ -f ".claude/commands/${cmd_name}.md" ]; then
+        echo ".claude/commands/${cmd_name}.md"
+        return 0
+    fi
+
+    return 1
+}
+
+# Extract frontmatter fields
+description=$(sed -n '/^description:/p' "$cmd_file" | sed 's/description: *//')
+usage=$(sed -n '/^usage:/p' "$cmd_file" | sed 's/usage: *//')
+```
+
+### Command Frontmatter Format
+
+Commands should include frontmatter for the help system:
+
+```markdown
+---
+description: Brief one-line description
+usage: /command-name [arguments]
+parameters: |
+  arg1: Description of argument 1
+  arg2: Description of argument 2
+examples: |
+  /command-name example1
+  /command-name example2 --option
+---
+
+[Command implementation steps...]
+```
+
+### Usage Pattern
+
+**When users ask: "how can I see the possible parameters for commands, is there an --help option?"**
+
+Response pattern:
+1. Explain `/command-help` command
+2. Show how to list all commands
+3. Demonstrate getting help for specific command
+
+**Example session:**
+```
+User: "How do I use the share-project command?"
+
+Claude: "You can use /command-help to view command documentation:
+
+/command-help share-project
+
+This will show:
+- Command description
+- Usage syntax
+- Available parameters
+- Examples
+
+To see full implementation details:
+/command-help share-project --full
+"
+```
+
+### Benefits
+
+- **Discoverability**: Users can explore available commands
+- **Self-documenting**: Commands include their own documentation
+- **Consistency**: Standardized help format across all commands
+- **No external docs**: Help available directly in CLI
+
+### Creating Help-Enabled Commands
+
+**Template for new commands:**
+
+```markdown
+---
+name: my-command
+description: Brief description of what this command does
+usage: /my-command [required-arg] [optional-arg]
+parameters: |
+  required-arg: Description of required argument
+  optional-arg: (Optional) Description of optional argument
+examples: |
+  /my-command basic-example
+  /my-command advanced-example --flag
+---
+
+# Command Implementation
+
+Step 1: [First step description]
+
+```bash
+# Implementation code
+```
+
+Step 2: [Second step description]
+
+[Continue with detailed steps...]
+```
+
+**Best practices for command documentation:**
+1. Keep description to 1 line (shows in list view)
+2. Document all parameters clearly
+3. Provide realistic examples
+4. Include expected output in steps
+5. Note any prerequisites or dependencies
+
+---
+
 ## Symlinking Skills and Commands to Projects
 
 ### Recommended Global Skills (Always Symlink These)

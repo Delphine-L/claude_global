@@ -650,6 +650,78 @@ Write: docs/new-guide.md
 # (Not wrapped in bash/Python script)
 ```
 
+#### Jupyter Notebook Manipulation Without nbformat
+
+**Problem**: nbformat may not be available in all environments, requiring conda/pip install
+
+**Solution**: Use Python's built-in json module for notebook manipulation
+
+```python
+# ✅ EFFICIENT: Use json module (no dependencies)
+import json
+
+# Read notebook
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+
+# Manipulate cells
+for cell in nb['cells']:
+    if cell['cell_type'] == 'code':
+        source = ''.join(cell['source'])
+        # Modify source (e.g., fix paths)
+        source = source.replace('old/path/', 'new/path/')
+        cell['source'] = source.split('\n')
+
+# Write back
+with open('notebook.ipynb', 'w') as f:
+    json.dump(nb, f, indent=1)
+```
+
+```python
+# ❌ WASTEFUL: Requires nbformat installation and dependencies
+import nbformat
+
+nb = nbformat.read('notebook.ipynb', as_version=4)
+# Manipulate...
+nbformat.write(nb, 'notebook.ipynb')
+```
+
+**When to use each approach:**
+
+| Task | json module | nbformat |
+|------|-------------|----------|
+| Path verification | ✅ Preferred | ❌ Overkill |
+| Source code modifications | ✅ Preferred | ❌ Overkill |
+| Simple cell edits | ✅ Preferred | ❌ Overkill |
+| Cell execution | ❌ Can't do | ✅ Required |
+| Format migration (v3→v4) | ❌ Can't do | ✅ Required |
+| Metadata validation | ❌ Limited | ✅ Better |
+
+**Benefits of json approach:**
+- No external dependencies
+- More portable across environments
+- Faster (no parsing overhead)
+- Direct access to notebook structure
+- Fewer tokens (no module import errors)
+
+**Example: Path verification in notebooks**
+```python
+import json
+import os
+
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+
+for cell_idx, cell in enumerate(nb['cells']):
+    if cell['cell_type'] == 'code':
+        source = ''.join(cell['source'])
+        # Check for broken paths
+        if 'read_csv(' in source:
+            print(f"Cell {cell_idx}: Found data loading")
+```
+
+**Token savings**: Avoids "ModuleNotFoundError" and environment setup discussions
+
 #### Token Savings Examples
 
 **Example 1: Update 10 config files**
