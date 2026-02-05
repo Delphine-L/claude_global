@@ -114,6 +114,92 @@ For each approved update:
    - [Why it matters]
    ```
 
+## After Creating New Skills
+
+If you created any NEW skills (not just updated existing ones), ask about symlinking:
+
+**For each new skill created:**
+
+```
+✅ New skill created: [skill-name]
+   Location: $CLAUDE_METADATA/skills/[category]/[skill-name]/
+
+Would you like to symlink this skill to the current project?
+
+- **Yes** - Useful for this project's work
+- **No** - Only for other projects (use /sync-skills later)
+- **Ask me** - Need more context to decide
+```
+
+**If user says Yes:**
+```bash
+# Create symlink
+ln -s $CLAUDE_METADATA/skills/[category]/[skill-name] .claude/skills/[skill-name]
+
+# Verify
+ls -la .claude/skills/[skill-name]
+```
+
+**If user says No:**
+```
+The skill is available globally. To use it in other projects, run:
+  cd /path/to/other-project
+  /sync-skills
+```
+
+**If user says "Ask me":**
+```
+This skill contains: [brief description]
+
+This project is: [detected type - notebook analysis, Galaxy workflows, etc.]
+
+Recommendation: [Yes/No based on relevance]
+- Yes: The skill's [specific feature] is directly relevant to [project aspect]
+- No: This skill is more suited for [other project type]
+```
+
+### Symlinking Multiple New Skills
+
+If multiple skills were created, ask about all of them together:
+
+```
+Created 3 new skills. Which would you like to symlink to this project?
+
+1. [ ] skill-name-1 - [one-line description]
+2. [ ] skill-name-2 - [one-line description]
+3. [ ] skill-name-3 - [one-line description]
+
+You can say:
+- "all" - Symlink all 3
+- "1 and 3" - Symlink specific ones
+- "none" - Don't symlink any (available via /sync-skills later)
+```
+
+### Important Notes
+
+- **Only prompt for NEW skills** created during this session
+- **Don't prompt for updated skills** that are already symlinked
+- **Check if skill already exists** in `.claude/skills/` before prompting
+- **Provide context** about what the skill does and project type
+
+### Example Workflow
+
+```
+User: "Update skills with today's learnings"
+Claude: [Analyzes, proposes updates, gets approval, applies updates]
+Claude: [Commits to git]
+Claude:
+  ✅ Created new skill: cleanup-verification
+     Location: $CLAUDE_METADATA/skills/project-management/cleanup-verification/
+
+  This skill helps with: Verifying notebook dependencies before cleanup
+  This project has: 2 Jupyter notebooks with figure dependencies
+
+  Recommendation: Yes - Directly relevant to this project
+
+  Would you like to symlink it to this project? (yes/no/ask me)
+```
+
 ## Token Efficiency Note
 
 When reading skill files for updates:
