@@ -27,6 +27,71 @@ ls -1 environment.yml requirements.txt conda*.yml 2>/dev/null
 
 ---
 
+### Step 1.5: Ask About File Selection
+
+**NEW WORKFLOW: Flexible file organization**
+
+Present two options:
+
+```
+📋 What would you like to share?
+
+Option 1: Specific files at root (Recommended for focused sharing)
+   - You specify which files to highlight (e.g., notebooks)
+   - Those files appear at the root of the sharing package
+   - Everything else organized in folders
+   - Example:
+     shared-package/
+     ├── Analysis_Notebook.ipynb        ← Your file at root
+     ├── Results_Notebook.ipynb         ← Your file at root
+     ├── figures/                       ← Supporting files in folders
+     ├── data/
+     ├── scripts/
+     └── README.md
+
+Option 2: Share entire directory (Full project structure)
+   - Copy everything except 'deprecated/' folder
+   - Maintains original directory structure
+   - Good for complete project handoff
+
+Which would you prefer? [1/2]
+```
+
+**If Option 1 (Specific files):**
+
+```bash
+# List available notebooks
+echo "Available notebooks:"
+ls -1 *.ipynb 2>/dev/null | nl
+
+# List other potential root files
+echo ""
+echo "Other files that could go at root:"
+ls -1 *.py *.md 2>/dev/null | nl
+
+# Ask user
+echo ""
+echo "Which files do you want at the root of the sharing package?"
+echo "Enter file names separated by spaces, or numbers from the list above:"
+echo "Example: Notebook1.ipynb Notebook2.ipynb"
+echo "Or: 1 2 (to select by number)"
+```
+
+**Collect user input:**
+- Store selected files in array: `ROOT_FILES=()`
+- Validate files exist
+- Confirm selection with user
+
+**If Option 2 (Entire directory):**
+
+```bash
+# Set flag to copy entire directory
+SHARE_ENTIRE_DIR=true
+EXCLUDE_PATTERNS=("deprecated" ".git" "__pycache__" "*.pyc" ".ipynb_checkpoints")
+```
+
+---
+
 ### Step 2: Ask User for Sharing Level
 
 Present options clearly:
@@ -88,36 +153,266 @@ Based on level chosen, ask:
 
 ### Step 4: Create Sharing Directory Structure
 
+**UPDATED WORKFLOW: Two approaches based on Step 1.5 selection**
+
+#### Approach A: Specific Files at Root (Option 1 selected)
+
+```bash
+SHARE_DIR="shared-$(date +%Y%m%d)-${project_name}"
+mkdir -p "$SHARE_DIR"
+
+# Create folders for supporting files only
+mkdir -p "$SHARE_DIR"/{figures,data,scripts,documentation}
+
+echo "Created sharing package structure:"
+echo "$SHARE_DIR/"
+echo "├── [Selected files will be at root]"
+echo "├── figures/"
+echo "├── data/"
+echo "├── scripts/"
+echo "├── documentation/"
+echo "└── README.md"
+```
+
+**Structure philosophy:**
+- **Root level**: User-selected key files (e.g., notebooks) - immediately visible
+- **Folders**: Supporting files (figures, data, scripts) - organized but not prominent
+- **Clean and minimal**: Recipients see the important files first
+
+#### Approach B: Entire Directory (Option 2 selected)
+
+```bash
+SHARE_DIR="shared-$(date +%Y%m%d)-${project_name}"
+mkdir -p "$SHARE_DIR"
+
+# Will copy entire directory structure, excluding specific patterns
+EXCLUDE_PATTERNS=("deprecated" ".git" "__pycache__" "*.pyc" ".ipynb_checkpoints" "shared-*")
+
+echo "Will copy entire project structure, excluding:"
+for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+    echo "  - $pattern"
+done
+```
+
+**Structure philosophy:**
+- **Preserve original**: Maintains your project's directory organization
+- **Exclude cruft**: Skips deprecated files, git history, Python cache, etc.
+- **Complete handoff**: Good for comprehensive project transfer
+
+---
+
+#### Legacy: Traditional Sharing Levels (Alternative)
+
+If you prefer the traditional Level 1/2/3 approach instead of the new file-selection workflow:
+
 **Level 1 - Summary:**
 ```bash
 SHARE_DIR="shared-$(date +%Y%m%d)-summary"
 mkdir -p "$SHARE_DIR"/{results/{figures,tables}}
-
-echo "Created structure:"
-tree -L 2 "$SHARE_DIR" 2>/dev/null || ls -R "$SHARE_DIR"
 ```
 
 **Level 2 - Reproducible:**
 ```bash
 SHARE_DIR="shared-$(date +%Y%m%d)-reproducible"
 mkdir -p "$SHARE_DIR"/{notebooks,scripts,data/processed,figures}
-
-echo "Created structure:"
-tree -L 2 "$SHARE_DIR" 2>/dev/null || ls -R "$SHARE_DIR"
 ```
 
 **Level 3 - Full Archive:**
 ```bash
 SHARE_DIR="shared-$(date +%Y%m%d)-full"
 mkdir -p "$SHARE_DIR"/{data/{raw,intermediate,processed},scripts,notebooks/{exploratory,final},results/{figures,tables,supplementary},documentation}
-
-echo "Created structure:"
-tree -L 2 "$SHARE_DIR" 2>/dev/null || ls -R "$SHARE_DIR"
 ```
 
 ---
 
 ### Step 5: Copy and Clean Files
+
+**UPDATED WORKFLOW: Handle both approaches**
+
+#### Approach A: Specific Files at Root
+
+```python
+import nbformat
+import shutil
+import os
+from pathlib import Path
+
+# ROOT_FILES contains user-selected files from Step 1.5
+# Example: ['Notebook1.ipynb', 'Notebook2.ipynb']
+
+print("📦 Creating sharing package with selected files at root...")
+
+# 1. Copy selected files to root (with cleaning for notebooks)
+for file_path in ROOT_FILES:
+    if file_path.endswith('.ipynb'):
+        # Clean notebook: remove outputs
+        print(f"Cleaning and copying: {file_path}")
+        with open(file_path, 'r') as f:
+            nb = nbformat.read(f, as_version=4)
+
+        # Clear outputs
+        for cell in nb.cells:
+            if cell.cell_type == 'code':
+                cell.outputs = []
+                cell.execution_count = None
+
+        # Remove debug cells
+        nb.cells = [c for c in nb.cells
+                    if 'debug' not in c.metadata.get('tags', [])]
+
+        # Write to root of sharing package
+        output_path = f"{SHARE_DIR}/{os.path.basename(file_path)}"
+        with open(output_path, 'w') as f:
+            nbformat.write(nb, f)
+        print(f"  ✓ {os.path.basename(file_path)} → root")
+
+        # Also export to HTML for easy viewing
+        try:
+            import subprocess
+            html_path = output_path.replace('.ipynb', '.html')
+            subprocess.run([
+                "jupyter", "nbconvert",
+                "--to", "html",
+                "--no-input",  # Hide code cells (optional)
+                output_path,
+                "--output", html_path
+            ], check=True, capture_output=True)
+            print(f"  ✓ Generated HTML version")
+        except:
+            print(f"  ⚠️  HTML export failed (optional)")
+    else:
+        # Copy other files as-is
+        shutil.copy(file_path, f"{SHARE_DIR}/{os.path.basename(file_path)}")
+        print(f"  ✓ {os.path.basename(file_path)} → root")
+
+# 2. Copy supporting files to organized folders
+print("\n📁 Copying supporting files to folders...")
+
+# Figures
+if os.path.exists("figures"):
+    shutil.copytree("figures", f"{SHARE_DIR}/figures",
+                    ignore=shutil.ignore_patterns('*draft*', '*old*'),
+                    dirs_exist_ok=True)
+    print(f"  ✓ figures/ → {SHARE_DIR}/figures/")
+
+# Data
+if os.path.exists("data"):
+    shutil.copytree("data", f"{SHARE_DIR}/data",
+                    ignore=shutil.ignore_patterns('*backup*', '*old*'),
+                    dirs_exist_ok=True)
+    print(f"  ✓ data/ → {SHARE_DIR}/data/")
+
+# Scripts
+if os.path.exists("scripts"):
+    shutil.copytree("scripts", f"{SHARE_DIR}/scripts",
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc'),
+                    dirs_exist_ok=True)
+    print(f"  ✓ scripts/ → {SHARE_DIR}/scripts/")
+
+# Documentation
+if os.path.exists("documentation"):
+    shutil.copytree("documentation", f"{SHARE_DIR}/documentation",
+                    dirs_exist_ok=True)
+    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/")
+
+# Environment file
+for env_file in ["environment.yml", "requirements.txt", "environment.txt"]:
+    if os.path.exists(env_file):
+        shutil.copy(env_file, f"{SHARE_DIR}/{env_file}")
+        print(f"  ✓ {env_file}")
+
+print("\n✅ Package created with selected files at root!")
+```
+
+**Result structure:**
+```
+shared-YYYY-MM-DD-project/
+├── Notebook1.ipynb              ← User-selected, at root
+├── Notebook2.ipynb              ← User-selected, at root
+├── Notebook1.html               ← Auto-generated
+├── Notebook2.html               ← Auto-generated
+├── README.md                    ← Generated
+├── figures/                     ← Supporting files in folders
+│   └── curation_impact/
+├── data/
+│   └── dataset.csv
+├── scripts/
+│   ├── plot_script.py
+│   └── analysis.py
+└── documentation/
+    └── notes.md
+```
+
+#### Approach B: Copy Entire Directory
+
+```bash
+#!/bin/bash
+
+echo "📦 Copying entire project structure..."
+
+# Exclude patterns
+EXCLUDE_PATTERNS=(
+    "--exclude=deprecated"
+    "--exclude=.git"
+    "--exclude=__pycache__"
+    "--exclude=*.pyc"
+    "--exclude=.ipynb_checkpoints"
+    "--exclude=shared-*"
+    "--exclude=.DS_Store"
+    "--exclude=*.swp"
+)
+
+# Use rsync for efficient copying with exclusions
+rsync -av "${EXCLUDE_PATTERNS[@]}" \
+    --exclude="$SHARE_DIR" \
+    ./ "$SHARE_DIR/"
+
+echo "✓ Copied entire directory"
+
+# Clean notebooks in the copied directory
+echo ""
+echo "🧹 Cleaning notebooks..."
+cd "$SHARE_DIR"
+for notebook in $(find . -name "*.ipynb" -not -path "./.ipynb_checkpoints/*"); do
+    python3 << EOF
+import nbformat
+with open("$notebook", 'r') as f:
+    nb = nbformat.read(f, as_version=4)
+for cell in nb.cells:
+    if cell.cell_type == 'code':
+        cell.outputs = []
+        cell.execution_count = None
+with open("$notebook", 'w') as f:
+    nbformat.write(nb, f)
+print(f"  ✓ Cleaned: $notebook")
+EOF
+done
+
+cd ..
+echo ""
+echo "✅ Entire directory copied and cleaned!"
+```
+
+**Result structure:**
+```
+shared-YYYY-MM-DD-project/
+├── Notebook1.ipynb
+├── Notebook2.ipynb
+├── figures/
+│   └── curation_impact/
+├── data/
+│   └── dataset.csv
+├── scripts/
+│   ├── plot_script.py
+│   └── analysis.py
+├── documentation/
+│   └── notes.md
+└── [maintains original structure]
+```
+
+---
+
+#### Legacy: Traditional Level-Based Copying
 
 **For Level 1 (Summary):**
 
