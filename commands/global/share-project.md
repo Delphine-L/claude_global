@@ -309,11 +309,41 @@ if os.path.exists("scripts"):
                     dirs_exist_ok=True)
     print(f"  ✓ scripts/ → {SHARE_DIR}/scripts/")
 
-# Documentation
+# Documentation (filtered - only essential docs)
+# Exclude: logs/, working_files/, progress files, session notes, drafts
+# Include: READMEs, summaries, methodology docs, reference materials
 if os.path.exists("documentation"):
+    def ignore_working_files(dir, files):
+        """Ignore working files, logs, and progress docs."""
+        ignore_list = []
+        for item in files:
+            # Ignore working directories
+            if item in ['logs', 'working_files', 'temp', 'tmp', '__pycache__']:
+                ignore_list.append(item)
+            # Ignore working/progress files
+            elif any(pattern in item.lower() for pattern in [
+                'progress', 'todo', 'resume', 'session', 'working',
+                'draft', 'scratch', 'notes_temp', 'wip', '_temp'
+            ]):
+                ignore_list.append(item)
+            # Ignore backup/old versions
+            elif any(pattern in item.lower() for pattern in [
+                'backup', '_old', '.bak', '~'
+            ]):
+                ignore_list.append(item)
+            # Ignore hidden files
+            elif item.startswith('.') and item != '.gitkeep':
+                ignore_list.append(item)
+        return ignore_list
+
     shutil.copytree("documentation", f"{SHARE_DIR}/documentation",
+                    ignore=ignore_working_files,
                     dirs_exist_ok=True)
-    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/")
+
+    # Report what was filtered
+    import os
+    copied_count = sum([len(files) for r, d, files in os.walk(f"{SHARE_DIR}/documentation")])
+    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/ ({copied_count} essential docs, working files excluded)")
 
 # Environment file
 for env_file in ["environment.yml", "requirements.txt", "environment.txt"]:
@@ -339,8 +369,35 @@ shared-YYYY-MM-DD-project/
 ├── scripts/
 │   ├── plot_script.py
 │   └── analysis.py
-└── documentation/
-    └── notes.md
+└── documentation/                  ← Filtered (working files excluded)
+    ├── README.md
+    ├── METHODOLOGY.md
+    └── ANALYSIS_SUMMARY.md
+    # Excluded: logs/, working_files/, PROGRESS.md, SESSION_NOTES.md, etc.
+```
+
+**Documentation Filtering Details:**
+
+The documentation copying automatically filters out working files to keep only essential documentation:
+
+**✅ Included (essential for understanding project):**
+- README files
+- Methodology documentation
+- Analysis summaries
+- Reference materials
+- Data dictionaries
+- Results summaries
+- Publication-related docs
+
+**❌ Excluded (working/temporary files):**
+- `logs/` directory
+- `working_files/` directory
+- `temp/` or `tmp/` directories
+- Files with: progress, todo, resume, session, working, draft, scratch, wip
+- Backup files: *_old, *.bak, *~
+- Hidden files (except .gitkeep)
+
+This ensures recipients see clean, professional documentation without development artifacts.
 ```
 
 #### Approach B: Copy Entire Directory
