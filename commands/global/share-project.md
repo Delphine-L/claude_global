@@ -309,68 +309,38 @@ if os.path.exists("scripts"):
                     dirs_exist_ok=True)
     print(f"  ✓ scripts/ → {SHARE_DIR}/scripts/")
 
-# Documentation (filtered - only essential docs)
-# Exclude: logs/, working_files/, progress files, session notes, drafts, deprecation, cleanup
-# Include: READMEs, summaries, reference materials
-# Organize: methodology docs → documentation/methods/
+# Documentation (directory-based filtering)
+# RECOMMENDED: Use organized documentation structure (see documentation-organization skill)
+# Include: data_descriptions/, methods/, results/, reference/
+# Exclude: progress/, action_reports/, todos/, internal/, deprecated/, logs/, working_files/
 if os.path.exists("documentation"):
-    def ignore_working_files(dir, files):
-        """Ignore working files, logs, progress docs, deprecation, and cleanup notes."""
+    def ignore_internal_dirs(dir, files):
+        """Exclude internal documentation directories."""
         ignore_list = []
         for item in files:
-            # Ignore working directories
-            if item in ['logs', 'working_files', 'temp', 'tmp', '__pycache__']:
+            # Exclude internal directories
+            if item in ['progress', 'action_reports', 'todos', 'internal',
+                       'deprecated', 'logs', 'working_files', 'temp', 'tmp', '__pycache__']:
                 ignore_list.append(item)
-            # Ignore working/progress files
-            elif any(pattern in item.lower() for pattern in [
-                'progress', 'todo', 'resume', 'session', 'working',
-                'draft', 'scratch', 'notes_temp', 'wip', '_temp'
-            ]):
-                ignore_list.append(item)
-            # Ignore deprecation and cleanup notes
-            elif any(pattern in item.lower() for pattern in [
-                'deprecation', 'deprecated', 'cleanup', 'migration'
-            ]):
-                ignore_list.append(item)
-            # Ignore backup/old versions
-            elif any(pattern in item.lower() for pattern in [
-                'backup', '_old', '.bak', '~'
-            ]):
-                ignore_list.append(item)
-            # Ignore hidden files
+            # Exclude hidden files (except .gitkeep)
             elif item.startswith('.') and item != '.gitkeep':
                 ignore_list.append(item)
         return ignore_list
 
     shutil.copytree("documentation", f"{SHARE_DIR}/documentation",
-                    ignore=ignore_working_files,
+                    ignore=ignore_internal_dirs,
                     dirs_exist_ok=True)
 
-    # Move methodology docs to methods/ subfolder
-    os.makedirs(f"{SHARE_DIR}/documentation/methods", exist_ok=True)
-
-    for root, dirs, files in os.walk(f"{SHARE_DIR}/documentation"):
-        # Skip the methods folder itself
-        if 'methods' in root:
-            continue
-
-        for file in files:
-            if any(pattern in file.lower() for pattern in [
-                'methodology', 'method', 'workflow', 'protocol',
-                'karyotype_workflow', 'analysis_plan', 'data_fetching'
-            ]):
-                old_path = os.path.join(root, file)
-                new_path = os.path.join(f"{SHARE_DIR}/documentation/methods", file)
-
-                # Only move if not already in methods/
-                if not new_path.startswith(old_path):
-                    shutil.move(old_path, new_path)
-                    print(f"      ↳ {file} → methods/")
-
-    # Report what was filtered
+    # Report what was copied
     import os
     copied_count = sum([len(files) for r, d, files in os.walk(f"{SHARE_DIR}/documentation")])
-    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/ ({copied_count} essential docs, working/cleanup files excluded)")
+    dirs_copied = [d for d in os.listdir(f"{SHARE_DIR}/documentation")
+                   if os.path.isdir(os.path.join(f"{SHARE_DIR}/documentation", d))]
+
+    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/ ({copied_count} files)")
+    if dirs_copied:
+        print(f"    Included directories: {', '.join(dirs_copied)}")
+    print(f"    Excluded: progress/, action_reports/, todos/, internal/, deprecated/, logs/")
 
 # Environment file
 for env_file in ["environment.yml", "requirements.txt", "environment.txt"]:
@@ -418,29 +388,42 @@ The documentation copying automatically filters and organizes files:
 - Reference materials
 - Results summaries
 
-**📁 Organized into methods/ subfolder:**
-- Methodology documentation
-- Workflow documents
-- Analysis plans
-- Data fetching protocols
-- Any files with: methodology, method, workflow, protocol, analysis_plan, data_fetching
+**✅ Included Directories (shareable):**
+- `data_descriptions/` - Dataset documentation and README files
+- `methods/` - Methodology, workflows, analysis plans
+- `results/` - Analysis summaries and findings
+- `reference/` - Citations and external references (if present)
+- Root files: README.md
 
-**❌ Excluded (working/temporary/internal files):**
-- `logs/` directory
-- `working_files/` directory
-- `temp/` or `tmp/` directories
-- Progress tracking: *progress*, *todo*, *resume*
-- Session notes: *session*
-- Working files: *working*, *draft*, *scratch*, *wip*
-- Deprecation notes: *deprecation*, *deprecated*
-- Cleanup notes: *cleanup*, *migration*
-- Backup files: *_old, *.bak, *~
+**❌ Excluded Directories (internal):**
+- `progress/` - Progress tracking, session notes
+- `action_reports/` - Updates, corrections, verifications
+- `todos/` - Task lists and priorities
+- `internal/` - Project management documentation
+- `deprecated/` - Old versions and deprecated files
+- `logs/` - Runtime logs
+- `working_files/` - Temporary files
 - Hidden files (except .gitkeep)
+
+**Recommendation**: Organize your documentation using the structure from the `documentation-organization` skill:
+```
+documentation/
+├── data_descriptions/  # ✅ Share
+├── methods/            # ✅ Share
+├── results/            # ✅ Share
+├── reference/          # ✅ Share (optional)
+├── progress/           # ❌ Internal
+├── action_reports/     # ❌ Internal
+├── todos/              # ❌ Internal
+├── internal/           # ❌ Internal
+└── deprecated/         # ❌ Internal
+```
 
 This ensures recipients see:
 - Clean, professional documentation
-- Organized methodology in dedicated subfolder
-- No internal working notes or development artifacts
+- Clear separation of shareable vs internal content
+- Organized by purpose (data, methods, results)
+- No working notes or development artifacts
 ```
 
 #### Approach B: Copy Entire Directory
