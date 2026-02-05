@@ -310,11 +310,12 @@ if os.path.exists("scripts"):
     print(f"  ✓ scripts/ → {SHARE_DIR}/scripts/")
 
 # Documentation (filtered - only essential docs)
-# Exclude: logs/, working_files/, progress files, session notes, drafts
-# Include: READMEs, summaries, methodology docs, reference materials
+# Exclude: logs/, working_files/, progress files, session notes, drafts, deprecation, cleanup
+# Include: READMEs, summaries, reference materials
+# Organize: methodology docs → documentation/methods/
 if os.path.exists("documentation"):
     def ignore_working_files(dir, files):
-        """Ignore working files, logs, and progress docs."""
+        """Ignore working files, logs, progress docs, deprecation, and cleanup notes."""
         ignore_list = []
         for item in files:
             # Ignore working directories
@@ -324,6 +325,11 @@ if os.path.exists("documentation"):
             elif any(pattern in item.lower() for pattern in [
                 'progress', 'todo', 'resume', 'session', 'working',
                 'draft', 'scratch', 'notes_temp', 'wip', '_temp'
+            ]):
+                ignore_list.append(item)
+            # Ignore deprecation and cleanup notes
+            elif any(pattern in item.lower() for pattern in [
+                'deprecation', 'deprecated', 'cleanup', 'migration'
             ]):
                 ignore_list.append(item)
             # Ignore backup/old versions
@@ -340,10 +346,31 @@ if os.path.exists("documentation"):
                     ignore=ignore_working_files,
                     dirs_exist_ok=True)
 
+    # Move methodology docs to methods/ subfolder
+    os.makedirs(f"{SHARE_DIR}/documentation/methods", exist_ok=True)
+
+    for root, dirs, files in os.walk(f"{SHARE_DIR}/documentation"):
+        # Skip the methods folder itself
+        if 'methods' in root:
+            continue
+
+        for file in files:
+            if any(pattern in file.lower() for pattern in [
+                'methodology', 'method', 'workflow', 'protocol',
+                'karyotype_workflow', 'analysis_plan', 'data_fetching'
+            ]):
+                old_path = os.path.join(root, file)
+                new_path = os.path.join(f"{SHARE_DIR}/documentation/methods", file)
+
+                # Only move if not already in methods/
+                if not new_path.startswith(old_path):
+                    shutil.move(old_path, new_path)
+                    print(f"      ↳ {file} → methods/")
+
     # Report what was filtered
     import os
     copied_count = sum([len(files) for r, d, files in os.walk(f"{SHARE_DIR}/documentation")])
-    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/ ({copied_count} essential docs, working files excluded)")
+    print(f"  ✓ documentation/ → {SHARE_DIR}/documentation/ ({copied_count} essential docs, working/cleanup files excluded)")
 
 # Environment file
 for env_file in ["environment.yml", "requirements.txt", "environment.txt"]:
@@ -369,35 +396,51 @@ shared-YYYY-MM-DD-project/
 ├── scripts/
 │   ├── plot_script.py
 │   └── analysis.py
-└── documentation/                  ← Filtered (working files excluded)
+└── documentation/                  ← Filtered & organized
     ├── README.md
-    ├── METHODOLOGY.md
-    └── ANALYSIS_SUMMARY.md
-    # Excluded: logs/, working_files/, PROGRESS.md, SESSION_NOTES.md, etc.
+    ├── ANALYSIS_SUMMARY.md
+    ├── DATA_TABLE_VERIFICATION.md
+    └── methods/                    ← Methodology docs subfolder
+        ├── KARYOTYPE_WORKFLOW.md
+        ├── analysis_plan.md
+        └── data_fetching_plan.md
+    # Excluded: logs/, working_files/, deprecation, cleanup, progress, session notes
 ```
 
-**Documentation Filtering Details:**
+**Documentation Filtering & Organization:**
 
-The documentation copying automatically filters out working files to keep only essential documentation:
+The documentation copying automatically filters and organizes files:
 
 **✅ Included (essential for understanding project):**
 - README files
-- Methodology documentation
-- Analysis summaries
+- Analysis summaries and reports
+- Data verification docs
 - Reference materials
-- Data dictionaries
 - Results summaries
-- Publication-related docs
 
-**❌ Excluded (working/temporary files):**
+**📁 Organized into methods/ subfolder:**
+- Methodology documentation
+- Workflow documents
+- Analysis plans
+- Data fetching protocols
+- Any files with: methodology, method, workflow, protocol, analysis_plan, data_fetching
+
+**❌ Excluded (working/temporary/internal files):**
 - `logs/` directory
 - `working_files/` directory
 - `temp/` or `tmp/` directories
-- Files with: progress, todo, resume, session, working, draft, scratch, wip
+- Progress tracking: *progress*, *todo*, *resume*
+- Session notes: *session*
+- Working files: *working*, *draft*, *scratch*, *wip*
+- Deprecation notes: *deprecation*, *deprecated*
+- Cleanup notes: *cleanup*, *migration*
 - Backup files: *_old, *.bak, *~
 - Hidden files (except .gitkeep)
 
-This ensures recipients see clean, professional documentation without development artifacts.
+This ensures recipients see:
+- Clean, professional documentation
+- Organized methodology in dedicated subfolder
+- No internal working notes or development artifacts
 ```
 
 #### Approach B: Copy Entire Directory
