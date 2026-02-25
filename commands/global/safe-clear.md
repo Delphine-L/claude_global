@@ -10,9 +10,41 @@ Save important session knowledge before clearing context to continue with a fres
 2. Captures learnings in skill updates
 3. Clears context for fresh start
 
+## ⛔ CRITICAL: Git Management
+
+**NEVER perform ANY git operations** (add, commit, push, stash, etc.) for the user.
+
+The user **always** manages git commits themselves. You may:
+- ✅ Check git status and show uncommitted changes
+- ✅ Suggest git commands the user could run
+- ❌ NEVER run git add, commit, push, or any other git write operations
+
+**The user wants full control over all git operations.**
+
 ## Your Task
 
-### Step 1: Check for Obsidian Integration
+### Step 1: Check for Git Repository
+
+```bash
+# Check if in git repository
+IN_GIT_REPO=false
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    IN_GIT_REPO=true
+    echo "ℹ️  Git repository detected - using git for version control."
+    echo ""
+fi
+```
+
+**Note:** This command does not offer backup prompts. It's for:
+- Saving session notes to Obsidian
+- Updating skills with learnings
+- Clearing context to continue fresh
+
+For git repositories, use `git commit` to save work.
+
+---
+
+### Step 2: Check for Obsidian Integration
 
 ```bash
 # Check if obsidian skill is available
@@ -31,7 +63,7 @@ echo "Obsidian available: $OBSIDIAN_AVAILABLE"
 
 ---
 
-### Step 2: Save Session Notes to Obsidian
+### Step 3: Save Session Notes to Obsidian
 
 **If Obsidian is available**, offer to save session notes:
 
@@ -43,12 +75,15 @@ This will create a note documenting:
   • Key decisions made
   • Important discoveries or patterns
 
-This helps maintain continuity when you resume.
+Options:
+  1. Default (save to sessions-history/ with today's date)
+  2. Custom (specify folder, filename, and theme)
+  3. Skip
 
-Save notes? (y/n):
+Enter choice [1-3]:
 ```
 
-#### If User Chooses Yes
+#### Choice 1: Default Mode (Date-based in sessions-history/)
 
 **Step 2a: Check for Project Configuration**
 
@@ -118,27 +153,50 @@ EOF
     echo "✅ Project configuration saved"
     echo "   Directory: $OBSIDIAN_PATH"
 fi
+
+# Set subfolder and filename for default mode
+SUBFOLDER="sessions-history"
+USE_THEME=false
 ```
 
-**Step 2b: Ask for Session Focus**
+#### Choice 2: Custom Mode
+
+**Step 2a: Same configuration check as above**
+
+Then ask for custom details:
 
 ```bash
 echo ""
-read -p "Brief focus/topic of this session: " SESSION_FOCUS
+echo "📝 Custom note configuration:"
+echo ""
+read -p "Subfolder within project (e.g., 'meetings', 'sprints'): " SUBFOLDER
+echo ""
+read -p "Note filename (without .md, e.g., 'sprint-review', '2026-02-05-planning'): " CUSTOM_FILENAME
+echo ""
+read -p "Session theme/topic: " SESSION_THEME
+echo ""
+
+USE_THEME=true
 ```
 
-**Step 2c: Generate Session Notes**
+#### Choice 3: Skip
 
-Analyze the conversation and create succinct notes:
+```bash
+echo "Skipping Obsidian notes..."
+echo ""
+# Proceed to Step 3
+```
+
+**Step 2b: Generate Session Notes**
+
+Analyze the conversation and create succinct notes.
+
+**For DEFAULT mode (no theme):**
 
 ```markdown
-# Session Notes
+## Session [HH:MM]
 
-**Project:** [Project Name]
-**Date:** [YYYY-MM-DD HH:MM]
-**Focus:** [Session Focus]
-
-## What Was Accomplished
+### What Was Accomplished
 
 [List 3-5 key accomplishments from this session]
 - Implemented X feature with Y approach
@@ -146,70 +204,130 @@ Analyze the conversation and create succinct notes:
 - Created documentation for new workflow
 - Analyzed data and identified key patterns
 
-## Key Decisions & Rationale
+### Key Decisions & Rationale
 
-[List important decisions made, if any]
+[List important decisions made - 2-3 bullets if any, otherwise omit section]
 - Chose approach A over B because of performance/simplicity/compatibility
 - Decided to refactor component X for better maintainability
 
-## Important Discoveries
+### Important Discoveries
 
-[Any patterns, insights, or learnings discovered]
+[Any patterns, insights, or learnings discovered - otherwise omit section]
 - Found that X performs better when Y is configured
 - Discovered pattern in data suggesting Z
 - Identified that approach A works well for use case B
 
-## Context for Next Session
+### Context for Next Session
 
 [What should be remembered when resuming]
 - Currently working on: [specific task]
 - Next steps: [what comes next]
 - Open questions: [any unresolved questions]
 
+### Notes
+
+[Any other relevant context - optional, omit if none]
+
+---
+```
+
+**For CUSTOM mode (with theme):**
+
+```markdown
+# Session Notes
+
+**Project:** [Project Name]
+**Date:** [YYYY-MM-DD HH:MM]
+**Focus:** [Session Theme]
+
+## What Was Accomplished
+
+[Same as above]
+
+## Key Decisions & Rationale
+
+[Same as above]
+
+## Important Discoveries
+
+[Same as above]
+
+## Context for Next Session
+
+[Same as above]
+
 ## Notes
 
-[Any other relevant context]
+[Same as above]
 
 ---
 *Session cleared at [timestamp] - Ready for fresh context*
 ```
 
-**Step 2d: Save to Obsidian**
+**Step 2c: Create or Append to Obsidian Note**
 
 ```python
 import os
 from datetime import datetime
 
-# Create filename with timestamp
+# Get current date and time
 now = datetime.now()
 date_str = now.strftime("%Y-%m-%d")
-time_str = now.strftime("%H%M")
-focus_slug = SESSION_FOCUS.replace(' ', '-').lower()
-filename = f"{date_str}_{time_str}_{focus_slug}.md"
+time_str = now.strftime("%H:%M")
+timestamp = now.strftime("%Y-%m-%d %H:%M")
 
-# Ensure project directory exists
+# Determine filename based on mode
+if USE_THEME:
+    # Custom mode - use provided filename
+    filename = f"{CUSTOM_FILENAME}.md"
+else:
+    # Default mode - use date
+    filename = f"{date_str}.md"
+
+# Ensure project directory and subfolder exist in Obsidian vault
 vault_path = os.environ.get('OBSIDIAN_VAULT')
-project_dir = os.path.join(vault_path, OBSIDIAN_PATH)
+# Use OBSIDIAN_PATH from config (includes any parent directories)
+project_dir = os.path.join(vault_path, OBSIDIAN_PATH, SUBFOLDER)
 os.makedirs(project_dir, exist_ok=True)
 
-# Write notes
+# Full path for note
 note_path = os.path.join(project_dir, filename)
-with open(note_path, 'w') as f:
-    f.write(notes_content)
 
-print(f"✅ Session notes saved to: {OBSIDIAN_PATH}/{filename}")
-```
+# Check if note already exists
+if os.path.exists(note_path):
+    # Append to existing note
+    print(f"📝 Appending to existing note: {filename}")
+    with open(note_path, 'a') as f:
+        f.write("\n\n")  # Add spacing
+        f.write(notes_content)
+    action = "appended to"
+else:
+    # Create new note with frontmatter and header
+    print(f"📝 Creating new note: {filename}")
+    with open(note_path, 'w') as f:
+        # Add frontmatter for new files
+        f.write("---\n")
+        f.write("type: session\n")
+        f.write(f"project: {PROJECT_NAME}\n")
+        f.write(f"date: {date_str}\n")
+        f.write("tags:\n")
+        f.write("  - session\n")
+        f.write("  - dump\n")
+        f.write("status: completed\n")
+        f.write("---\n\n")
 
-#### If User Chooses No or Obsidian Not Available
+        if not USE_THEME:
+            # Add date header for default mode
+            f.write(f"# {date_str}\n\n")
+        f.write(notes_content)
+    action = "saved to"
 
-```bash
-echo "Skipping Obsidian notes..."
-echo ""
+print(f"✅ Session notes {action}: {OBSIDIAN_PATH}/{SUBFOLDER}/{filename}")
 ```
 
 ---
 
-### Step 3: Run Update Skills Command
+### Step 4: Run Update Skills Command
 
 Capture session learnings in skill updates:
 
@@ -260,7 +378,7 @@ echo ""
 
 ---
 
-### Step 4: Confirm Context Clear
+### Step 5: Confirm Context Clear
 
 Present final confirmation:
 
@@ -294,12 +412,12 @@ Clear context now? (y/n):
 Context Clear Summary:
 
 Project: [current directory]
-Session notes: [Saved to $OBSIDIAN_PATH/YYYY-MM-DD_HHMM_focus.md / Skipped]
+Session notes: [Saved/Appended to $OBSIDIAN_PATH/sessions-history/YYYY-MM-DD.md / Custom location / Skipped]
 Skills updated: [Yes / No]
 Context: Cleared ✓
 
 💡 Your session notes are preserved in Obsidian
-   Review them when you return to understand where you left off.
+   Review them when you return: [ProjectName]/sessions-history/
 
 💡 Skills have been updated with session knowledge
    Future sessions benefit from what was learned today.
@@ -323,7 +441,7 @@ echo "  • Or restart the session (Ctrl+D and restart)"
 echo ""
 echo "Your session knowledge is safely preserved in:"
 if [ "$OBSIDIAN_AVAILABLE" = "true" ]; then
-    echo "  • Obsidian vault: $OBSIDIAN_PATH/"
+    echo "  • Obsidian vault: $OBSIDIAN_PATH/sessions-history/"
 fi
 echo "  • Updated skills in: \$CLAUDE_METADATA/skills/"
 ```
@@ -476,7 +594,7 @@ Choice: [1/2]
 
 ## Example Interactions
 
-### Example 1: Full Clear with Notes and Skills
+### Example 1: Default Mode (Date-based)
 
 ```
 User: /safe-clear
@@ -488,13 +606,17 @@ This will create a note documenting:
   • Key decisions made
   • Important discoveries or patterns
 
-Save notes? (y/n): y
+Options:
+  1. Default (save to sessions-history/ with today's date)
+  2. Custom (specify folder, filename, and theme)
+  3. Skip
 
-Brief focus/topic of this session: pathway analysis implementation
+Enter choice [1-3]: 1
 
 ✍️ Generating session notes...
 
-✅ Session notes saved to: genome-pipeline/2026-02-05_1430_pathway-analysis-implementation.md
+📝 Appending to existing note: 2026-02-05.md
+✅ Session notes appended to: genome-pipeline/sessions-history/2026-02-05.md
 
 🧠 Reviewing session for skill updates...
 
@@ -511,7 +633,7 @@ Running /update-skills command...
 ⚠️  Ready to clear context
 
 Session knowledge preserved:
-  • Obsidian notes: Saved
+  • Obsidian notes: Appended
   • Skill updates: Applied
 
 Clear context now? (y/n): y
@@ -520,11 +642,13 @@ Clear context now? (y/n): y
 Context Clear Summary:
 
 Project: genome-pipeline
-Session notes: Saved to genome-pipeline/2026-02-05_1430_pathway-analysis-implementation.md
+Session notes: Appended to genome-pipeline/sessions-history/2026-02-05.md
 Skills updated: Yes (3 skills)
 Context: Cleared ✓
 
 💡 Your session notes are preserved in Obsidian
+   Review them when you return: genome-pipeline/sessions-history/
+
 💡 Skills updated with session knowledge
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -532,29 +656,53 @@ Context: Cleared ✓
 Context cleared. Ready for fresh start! 🔄
 ```
 
-### Example 2: Quick Clear (Skip Skills)
+### Example 2: Custom Mode
 
 ```
-User: /safe-clear --no-skills
-
-Skipping skill updates...
+User: /safe-clear
 
 📝 Save session notes to Obsidian before clearing?
 
-Save notes? (y/n): y
+Options:
+  1. Default (save to sessions-history/ with today's date)
+  2. Custom (specify folder, filename, and theme)
+  3. Skip
 
-Brief focus/topic of this session: data cleanup
+Enter choice [1-3]: 2
 
-✅ Session notes saved to: data-project/2026-02-05_1445_data-cleanup.md
+📝 Custom note configuration:
+
+Subfolder within project (e.g., 'meetings', 'sprints'): sprints
+
+Note filename (without .md, e.g., 'sprint-review', '2026-02-05-planning'): sprint-15-retrospective
+
+Session theme/topic: Sprint 15 Review and Planning
+
+✍️ Generating session notes...
+
+📝 Creating new note: sprint-15-retrospective.md
+✅ Session notes saved to: genome-pipeline/sprints/sprint-15-retrospective.md
+
+🧠 Reviewing session for skill updates...
+
+Would you like to update skills with knowledge from this session?
+
+Update skills? (y/n): n
+
+Skipping skill updates...
 
 ⚠️  Ready to clear context
+
+Session knowledge preserved:
+  • Obsidian notes: Saved
+  • Skill updates: Skipped
 
 Clear context now? (y/n): y
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Context Clear Summary:
 
-Session notes: Saved
+Session notes: Saved to genome-pipeline/sprints/sprint-15-retrospective.md
 Skills updated: Skipped
 Context: Cleared ✓
 
@@ -563,50 +711,74 @@ Context: Cleared ✓
 Context cleared. Ready for fresh start! 🔄
 ```
 
-### Example 3: Obsidian Note Structure
+### Example 3: Default Mode Note Structure (Multiple Sessions per Day)
 
-**File:** `genome-pipeline/2026-02-05_1430_pathway-analysis-implementation.md`
+**File:** `genome-pipeline/sessions-history/2026-02-05.md`
 
 ```markdown
-# Session Notes
+---
+type: session
+project: genome-pipeline
+date: 2026-02-05
+tags:
+  - session
+  - dump
+status: completed
+---
 
-**Project:** genome-pipeline
-**Date:** 2026-02-05 14:30
-**Focus:** pathway analysis implementation
+# 2026-02-05
 
-## What Was Accomplished
+## Session 09:30
+
+### What Was Accomplished
 
 - Implemented pathway enrichment analysis using Fisher's exact test
 - Created visualization script for pathway networks
 - Added statistical correction (Benjamini-Hochberg FDR)
-- Tested on sample dataset with 200 genes
 
-## Key Decisions & Rationale
+### Key Decisions & Rationale
 
 - Chose Fisher's exact test over hypergeometric due to small sample sizes
 - FDR correction at 0.05 threshold (standard in field)
-- Network visualization with Cytoscape-compatible output
 
-## Important Discoveries
+### Context for Next Session
+
+- Currently working on: pathway visualization improvements
+- Next steps: add gene-level annotations to network
+
+---
+
+## Session 14:30
+
+### What Was Accomplished
+
+- Added gene-level annotations to network visualization
+- Tested on sample dataset with 200 genes
+- Created export functionality for Cytoscape
+
+### Important Discoveries
 
 - Found that pathway overlap affects enrichment scores
 - Background gene set selection significantly impacts results
 - Need to filter pathways with <5 genes for reliable statistics
 
-## Context for Next Session
+### Context for Next Session
 
-- Currently working on: pathway visualization improvements
-- Next steps: add gene-level annotations to network
+- Next steps: implement pathway clustering
 - Open questions: best way to handle overlapping pathways
 
-## Notes
+### Notes
 
-Consider implementing pathway clustering to reduce redundancy in results.
-Literature suggests using semantic similarity for this.
+Consider using semantic similarity for pathway clustering to reduce redundancy.
 
 ---
-*Session cleared at 2026-02-05 14:30 - Ready for fresh context*
 ```
+
+**Benefits of this structure:**
+- All work for a given day in one file (easy to review)
+- Sessions appended chronologically with timestamps
+- Can see progression of work throughout the day
+- Searchable by date in Obsidian
 
 ---
 

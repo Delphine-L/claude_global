@@ -78,23 +78,23 @@ shared-summary/
 - Standard collaboration needs
 
 **Structure:**
+
+For standard project structures, see the **folder-organization** skill. Reproducible packages should include:
+- Processed data (in `data/processed/`)
+- Cleaned notebooks (in `notebooks/`) with outputs cleared
+- Scripts (in `scripts/`)
+- Environment specification (`environment.yml` or `requirements.txt`)
+- Documentation (`README.md`, `MANIFEST.md`)
+
 ```
 shared-reproducible/
 ├── README.md                          # Setup and reproduction instructions
 ├── MANIFEST.md                        # File descriptions
 ├── environment.yml                    # Conda environment OR requirements.txt
-├── notebooks/
-│   ├── 01-data-processing.ipynb      # Cleaned, outputs cleared
-│   ├── 02-analysis.ipynb
-│   └── 03-visualization.ipynb
-├── scripts/
-│   ├── generate_figures.py           # Standalone scripts
-│   └── utils.py
+├── notebooks/                         # Cleaned notebooks
+├── scripts/                           # Standalone scripts
 └── data/
-    ├── processed/
-    │   ├── cleaned_data.csv
-    │   └── processed_results.tsv
-    └── README.md                      # Data provenance
+    └── processed/                     # Analysis-ready data
 ```
 
 ---
@@ -119,6 +119,9 @@ shared-reproducible/
 - Complete project handoff
 
 **Structure:**
+
+For standard project structures, see the **folder-organization** skill. Full traceability packages should include complete data hierarchy:
+
 ```
 shared-complete/
 ├── README.md                          # Complete project guide
@@ -126,31 +129,18 @@ shared-complete/
 ├── environment.yml
 ├── data/
 │   ├── raw/                          # Original, unmodified data
-│   │   ├── sample_A_reads.fastq.gz
-│   │   └── README.md                 # Data source, download date
 │   ├── intermediate/                 # Processing steps
-│   │   ├── 01-filtered/
-│   │   ├── 02-aligned/
-│   │   └── README.md
 │   └── processed/                    # Final analysis-ready
-│       └── final_dataset.csv
-├── scripts/
-│   ├── 01-download-data.sh
-│   ├── 02-quality-control.py
-│   ├── 03-filtering.py
-│   ├── 04-analysis.py
-│   └── utils/
-├── notebooks/
-│   ├── exploratory/                  # Early exploration
-│   └── final/                        # Publication analyses
-├── results/
+├── scripts/                           # All processing scripts
+├── notebooks/                         # All notebooks (exploratory + final)
+├── results/                           # All outputs
 │   ├── figures/
 │   ├── tables/
 │   └── supplementary/
-└── documentation/
-    ├── methods.md                    # Detailed methodology
-    ├── changelog.md                  # Processing decisions
-    └── data-dictionary.md            # Variable definitions
+└── documentation/                     # Complete documentation
+    ├── methods.md
+    ├── changelog.md
+    └── data-dictionary.md
 ```
 
 ---
@@ -251,121 +241,17 @@ def clean_notebook(input_path, output_path):
 
 ### Step 4.5: CRITICAL - Verify and Fix File Paths
 
-**Problem**: Notebooks and scripts with broken file paths will fail when shared. This happens when:
-- Files are reorganized (e.g., `phylo/` merged into `figures/`)
-- Paths reference parent directories no longer in package
+**Problem**: Notebooks and scripts with broken file paths will fail when shared. Common issues:
+- Absolute paths instead of relative paths
+- Files reorganized after paths were written
 - Data files moved to different subdirectories
-- Absolute paths are used instead of relative paths
+- Paths reference parent directories no longer in package
 
-#### Automatic Path Verification Script
+**For complete path verification procedures, automated checking scripts, and correction patterns, see the `folder-organization` skill.**
 
-Add this comprehensive verification step in share-project command:
+#### Quick Verification
 
-```python
-import json
-import os
-import re
-from pathlib import Path
-
-print("\n🔍 Verifying file paths in notebooks...")
-
-# Find all notebooks
-notebooks = []
-for root, dirs, files in os.walk(SHARE_DIR):
-    for file in files:
-        if file.endswith('.ipynb'):
-            notebooks.append(os.path.join(root, file))
-
-# Check paths in each notebook
-for notebook_path in notebooks:
-    with open(notebook_path, 'r') as f:
-        nb = json.load(f)
-
-    issues_found = []
-
-    for cell_idx, cell in enumerate(nb['cells']):
-        if cell['cell_type'] == 'code':
-            source = ''.join(cell['source'])
-
-            # Check for file references
-            patterns = {
-                'read_csv': r'read_csv\([\'"]([^\'")]+)[\'"]',
-                'Image': r'Image\(filename=[\'"]([^\'")]+)[\'"]',
-                'imread': r'imread\([\'"]([^\'")]+)[\'"]',
-                'to_csv': r'to_csv\([\'"]([^\'")]+)[\'"]',
-                'savefig': r'savefig\([\'"]([^\'")]+)[\'"]',
-            }
-
-            for pattern_name, pattern in patterns.items():
-                matches = re.findall(pattern, source)
-                for match in matches:
-                    # Determine full path
-                    notebook_dir = os.path.dirname(notebook_path)
-                    if notebook_dir == SHARE_DIR:
-                        referenced_path = os.path.join(SHARE_DIR, match)
-                    else:
-                        referenced_path = os.path.normpath(
-                            os.path.join(notebook_dir, match)
-                        )
-
-                    # Check if file exists
-                    if not os.path.exists(referenced_path):
-                        # Try to find file in package
-                        filename = os.path.basename(match)
-                        found_paths = []
-                        for root, dirs, files in os.walk(SHARE_DIR):
-                            if filename in files:
-                                found_paths.append(
-                                    os.path.relpath(
-                                        os.path.join(root, filename),
-                                        notebook_dir if notebook_dir != SHARE_DIR else SHARE_DIR
-                                    )
-                                )
-
-                        issues_found.append({
-                            'cell': cell_idx + 1,
-                            'type': pattern_name,
-                            'path': match,
-                            'suggestions': found_paths
-                        })
-
-    # Report issues
-    if issues_found:
-        print(f"\n⚠️  {os.path.basename(notebook_path)}:")
-        for issue in issues_found:
-            print(f"  Cell {issue['cell']}: {issue['type']}('{issue['path']}')")
-            if issue['suggestions']:
-                print(f"    ✅ Suggested fix: {issue['suggestions'][0]}")
-            else:
-                print(f"    ❌ File not found in package")
-
-# If issues found, offer to fix them automatically
-if any_issues_found:
-    print("\n🔧 Fix these paths before sharing? (manual or automatic)")
-```
-
-#### Automated Path Correction
-
-```python
-def fix_notebook_paths(notebook_path, path_corrections):
-    """Fix file paths in notebook automatically."""
-    with open(notebook_path, 'r') as f:
-        nb = json.load(f)
-
-    for cell in nb['cells']:
-        if cell['cell_type'] == 'code':
-            source = ''.join(cell['source'])
-            # Apply corrections
-            for old_path, new_path in path_corrections.items():
-                source = source.replace(f"'{old_path}'", f"'{new_path}'")
-                source = source.replace(f'"{old_path}"', f'"{new_path}"')
-            cell['source'] = source.split('\n')
-
-    with open(notebook_path, 'w') as f:
-        json.dump(nb, f, indent=1)
-```
-
-#### Common Path Issues
+Key things to check before sharing:
 
 | ❌ Breaks when shared | ✅ Works when shared |
 |---------------------|-------------------|
@@ -373,31 +259,26 @@ def fix_notebook_paths(notebook_path, path_corrections):
 | `C:\Users\yourname\project\fig.png` | `figures/fig.png` |
 | `/absolute/path/to/results/` | `results/` |
 | `Image('/Users/you/notebook.png')` | `Image('figures/notebook.png')` |
-| `phylo/tree.svg` (old location) | `figures/curation_impact/tree.svg` (new) |
-| `read_csv('file.csv')` (missing dir) | `read_csv('data/file.csv')` |
 
-#### Verification Checklist
+**Quick check commands:**
+```bash
+# Check for absolute paths in notebooks
+grep -l "/Users/" *.ipynb
+grep -l "C:\\\\" *.ipynb
 
-1. ✅ All `pd.read_csv()` use relative paths
-2. ✅ All `Image()` displays use relative paths
-3. ✅ All figure saves use relative paths
-4. ✅ All data file references use relative paths
-5. ✅ Files exist at referenced paths
-6. ✅ Paths work from notebook location
-7. ✅ Test notebook runs from different directory
+# Search for file references that may need updating
+grep -r "\.json\|\.csv\|\.png" --include="*.ipynb" --include="*.py"
+```
 
 #### Testing Before Sharing
 
 ```bash
-# Copy to temp location
+# Copy to temp location and test
 cp -r project /tmp/test-project
 cd /tmp/test-project
 
 # Try to open notebook and check for errors
 jupyter nbconvert --to html notebook.ipynb 2>&1 | grep -i error
-
-# Or open in Jupyter and verify images load
-jupyter lab notebook.ipynb
 ```
 
 #### Benefits of Automatic Verification
@@ -1136,6 +1017,51 @@ Before finalizing the sharing package:
 - [ ] Files logically grouped
 - [ ] No duplicate files
 - [ ] No unnecessary files (cache, .DS_Store, etc.)
+
+### Verify Data File References After Consolidation
+
+After consolidating or moving data files, verify all code references:
+
+**1. Find all data loading statements**:
+```python
+import re
+
+# Search for read_csv patterns
+csv_reads = re.findall(r'read_csv\([\'"]([^\'"]+)[\'"]', content)
+
+# Check against valid files
+VALID_FILES = {
+    'data/vgp_assemblies_unified_corrected.csv',
+    'data/vgp_assemblies_3categories.csv',
+}
+
+for csv_file in csv_reads:
+    if 'vgp_assemblies' in csv_file and csv_file not in VALID_FILES:
+        print(f"⚠️ DEPRECATED: {csv_file}")
+```
+
+**2. Check notebooks and scripts**:
+```bash
+# Find all notebooks
+find . -name "*.ipynb" -type f
+
+# Find all Python scripts
+find scripts -name "*.py" -type f
+
+# Search for deprecated file patterns
+grep -r "vgp_assemblies_unified\.csv" *.ipynb scripts/*.py
+```
+
+**3. Create verification report**:
+- List each notebook/script
+- Show which file(s) it loads
+- Mark as ✓ CORRECT or ⚠️ DEPRECATED
+- Document expected files vs. actual
+
+**4. Update deprecated references**:
+- Data processing scripts: Update to check deprecated/ folder
+- Analysis notebooks: Update to use consolidated files
+- Add comments noting file deprecation
 
 ---
 

@@ -7,7 +7,7 @@ Comprehensive catalog of all available Claude Code skills organized by category.
 | Category | Skills | Use Cases |
 |----------|--------|-----------|
 | [Claude Meta](#claude-meta) | 3 | Claude Code usage, collaboration, optimization |
-| [Project Management](#project-management) | 3 | Project setup, folder organization, environment management, note-taking |
+| [Project Management](#project-management) | 4 | Project setup, folder organization, environment management, note-taking, backups |
 | [Packaging](#packaging) | 1 | Bioconda recipe development |
 | [Galaxy](#galaxy) | 3 | Galaxy platform development & automation |
 | [Bioinformatics](#bioinformatics) | 2 | Genome assembly, sequencing analysis |
@@ -70,6 +70,19 @@ Project setup, organization, and environment management.
 - **When to use:** Creating session notes, tracking tasks during development, documenting decisions and solutions, building knowledge base, organizing research findings
 - **Key topics:** Note templates, task management, wikilinks, tags, helper functions, vault organization, session documentation
 - **Best practices:** Atomic notes, linking concepts, hierarchical tags, timestamp everything
+
+### data-backup
+- **Path:** `project-management/data-backup/`
+- **Version:** 2.0.0
+- **Description:** Smart automated backup system with skill integration. Detects project type (notebooks, data files, HackMD docs) and applies appropriate cleanup before backup. Rolling daily backups, compressed milestones, and CHANGELOG tracking.
+- **When to use:** Any project with changing files, long-running analyses, data enrichment, or collaborative work
+- **Key topics:** Smart detection, skill integration (jupyter-notebook, hackmd, managing-environments), daily/milestone backups, CHANGELOG tracking, session integration with /safe-exit
+- **Commands:** `/backup` (setup and execute), `/safe-exit` (prompts for backup)
+- **Features:**
+  - Automatic cleanup: clears notebook outputs, removes debug cells, cleans Python artifacts
+  - Two-tier system: daily rolling (7-day window) + permanent milestones
+  - Session integration: prompts for backup when exiting with `/safe-exit`
+  - Storage efficient: gzip compression (~80% reduction)
 
 ---
 
@@ -150,9 +163,10 @@ Data analysis and computational notebooks.
 
 ### jupyter-notebook
 - **Path:** `analysis/jupyter-notebook/`
-- **Description:** Best practices for creating comprehensive Jupyter notebook data analyses with statistical rigor, outlier handling, and publication-quality visualizations.
-- **When to use:** Creating analysis notebooks, statistical analysis, data visualization, publication figures
-- **Key topics:** Statistical methods, outlier detection, visualization best practices, reproducibility
+- **Version:** 1.1.0
+- **Description:** Best practices for creating comprehensive Jupyter notebook data analyses with statistical rigor, outlier handling, and publication-quality visualizations. Includes Claude API image size helpers.
+- **When to use:** Creating analysis notebooks, statistical analysis, data visualization, publication figures, generating images for Claude review
+- **Key topics:** Statistical methods, outlier detection, visualization best practices, reproducibility, Claude image constraints
 - **Quality standards:** Statistical rigor, comprehensive documentation, publication-quality outputs
 
 ---
@@ -192,7 +206,9 @@ galaxy/automation
 
 ---
 
-## Essential Skills Recommendation
+## Essential Skills & Commands Recommendation
+
+### Foundational Skills
 
 For most projects, include these foundational skills:
 
@@ -202,6 +218,24 @@ For most projects, include these foundational skills:
 4. **project-management/managing-environments** - Development environment setup and management (venv/conda)
 5. **project-management/folder-organization** - Project structure and organization
 6. **project-management/obsidian** - Session notes, task tracking, and knowledge management during Claude sessions
+7. **project-management/data-backup** - Smart backup system with cleanup, rolling daily backups, and session integration
+8. **collaboration/project-sharing** - Prepare organized packages for sharing with collaborators at different levels
+
+### Essential Commands
+
+Use these commands regularly for optimal workflow:
+
+**Session Management:**
+- `/safe-exit` - End sessions with notes and optional backup (use instead of plain exit)
+- `/safe-clear` - Clear context while preserving knowledge (when switching tasks)
+
+**Project Organization:**
+- `/consolidate-notes` - Weekly/bi-weekly consolidation with AI analysis and project status updates
+- `/backup` - Create daily or milestone backups
+
+**Setup & Help:**
+- `/setup-project` - Initialize new projects with skills and commands
+- `/command-help` - Get help on any command
 
 Add domain-specific skills as needed for your project type.
 
@@ -215,6 +249,19 @@ Skills load progressively - Claude sees descriptions first, full content only wh
 - Skill is needed for current task
 
 **Manual activation:** Mention the skill name in your message to Claude.
+
+---
+
+## Cross-References Between Skills
+
+Many skills reference each other for related content. When a skill mentions "See the **skill-name** skill," it's pointing you to authoritative documentation on that topic:
+
+**Common cross-references:**
+- **Path verification** - Detailed in `folder-organization`, referenced by `project-sharing` and `data-backup`
+- **Project structures** - Canonical versions in `folder-organization`, adapted in `project-sharing`
+- **Session notes** - Directory structure in `folder-organization`, dump tag details in `obsidian`
+- **.gitignore templates** - Complete version in `folder-organization`, environment-specific in `managing-environments`
+- **README templates** - General template in `folder-organization`, documentation-specific in `documentation-organization`
 
 ---
 
@@ -233,7 +280,11 @@ skill-name/
 
 ## Maintenance
 
-**Last updated:** 2026-01-23
+**Last updated:** 2026-02-25
+
+**Recent changes:**
+- 2026-02-25: Deduplicated content across skills, added cross-reference section
+- 2026-02-25: Added Claude API image size constraints to data-visualization and jupyter-notebook skills
 
 **How to update this index:**
 1. When adding new skills, update the relevant category section

@@ -439,147 +439,274 @@ chr1    5001 5100    2    U    100    scaffold    yes    proximity_ligation
 3. **Use representative data:** Subsample proportionally, not randomly
 4. **Verify file sizes:** Too small = overly filtered
 
-## Genome Ark Data Retrieval
+## GenomeArk AWS S3 Data Access
 
 ### Overview
-Genome Ark (s3://genomeark/) is a public AWS S3 bucket containing VGP assemblies and QC data. Access requires no credentials using `--no-sign-request`.
+GenomeArk (s3://genomeark/) is a public AWS S3 bucket containing VGP genome assemblies and QC data. Access requires no credentials using `--no-sign-request`.
 
-### Directory Structure
+**Critical Discovery**: GenomeArk S3 structure has evolved over time (2022 → 2024). Always try multiple path patterns for reliability.
+
+### Directory Structure Evolution
+
+**Base structure**:
 ```
-s3://genomeark/species/{SPECIES_NAME}/{TOLID}/
-├── assembly_vgp_HiC_2.0/          # Standard HiC assembly
-├── assembly_vgp_standard_2.1/     # Standard assembly
-├── assembly_vgp_trio_1.0/         # Trio assembly
-├── assembly_curated/              # Manually curated
-├── assembly_{METHOD}_{VERSION}/   # Method-specific (e.g., assembly_verkko_1.4)
-└── genomic_data/                  # Raw sequencing data
+s3://genomeark/species/{Species_name}/{ToLID}/assembly_vgp_{type}_2.0/evaluation/
 ```
 
-### GenomeScope Data Locations
-GenomeScope summaries can be in multiple locations - search comprehensively:
+**Key variation**:
+- Table may store: `assembly_vgp_hic_2.0`
+- S3 requires: `assembly_vgp_HiC_2.0` (case-sensitive!)
+- **Always normalize**: Replace `hic` → `HiC` before fetching
 
-**Common paths** (priority order):
-1. `{assembly}/evaluation/genomescope/{TOLID}_genomescope__Summary.txt`
-2. `{assembly}/evaluation/genomescope2/{TOLID}_genomescope__Summary.txt`
-3. `{assembly}/qc/genomescope/{TOLID}_genomescope__Summary.txt`
-4. `{assembly}/intermediates/genomescope/{TOLID}_genomescope__Summary.txt`
+### QC Data Locations and Formats
 
-**Search strategy**:
-1. Dynamically discover assembly folders (not all species use same structure)
-2. Search multiple subfolder locations per assembly
-3. Try standard assemblies first (HiC_2.0, standard_2.1)
-4. Fall back to method-specific assemblies
+#### 1. GenomeScope (Genome Size, Heterozygosity, Repeat Content)
 
-### Python Implementation Pattern
+**Path**: `{assembly}/evaluation/genomescope/`
+
+**Filename patterns** (try in order):
+1. `{ToLID}_genomescope__Summary.txt` (Pattern A: double underscore - most common)
+2. `{ToLID}_genomescope_Summary.txt` (Pattern C: single underscore ⭐ EASILY MISSED)
+3. `{ToLID}_Summary.txt` (Pattern B: no prefix - older assemblies)
+
+**⚠️ CRITICAL**: ALL THREE patterns must be checked! Pattern C (single underscore) was discovered in Feb 2026 during debugging - checking only patterns A and B causes ~30-40% of data to be missed!
+
+**Example of Pattern C**:
+- Missing: `rPlaMeg1_genomescope__Summary.txt` ✗
+- Found: `rPlaMeg1_genomescope_Summary.txt` ✓
+
+**⚠️ CRITICAL: Validate Data Quality**
+
+Failed GenomeScope runs show unrealistic ranges:
+```
+Heterozygous (ab)    0%    100%     ← FAILED RUN - DO NOT USE
+```
+
+Good runs show narrow ranges:
+```
+Heterozygous (ab)    0.49%    0.54%  ← VALID - use max value
+```
+
+**Validation logic**:
+```python
+# Extract min and max percentages
+percentages = [0.49, 0.54]  # Example from parsing
+min_val, max_val = percentages[0], percentages[-1]
+range_width = max_val - min_val
+
+# Validate before using
+if range_width <= 50.0 and max_val <= 95.0:
+    heterozygosity = max_val  # ACCEPT
+else:
+    heterozygosity = None  # REJECT - failed run
+```
+
+**Skip values if**:
+- Range width > 50% (indicates model failure)
+- Max value > 95% (unrealistic for most genomes)
+- Range is exactly 0%-100% (complete failure)
+
+**Summary.txt format**:
+```
+GenomeScope version 2.0
+...
+property                      min               max
+Genome Haploid Length         4,077,481,159 bp  4,095,803,536 bp
+Heterozygous (ab)             1.43264%          1.47696%
+Genome Repeat Length          2,528,408,288 bp  2,539,769,824 bp
+```
+
+**Parsing**:
+- Genome size: Take max value (second number), remove commas
+- Heterozygosity: Take max percentage (validate range first!)
+- Repeat content: Calculate `(repeat_length / genome_size) * 100`
+
+#### 2. BUSCO (Assembly Completeness)
+
+**Path**: `{assembly}/evaluation/busco/{subdir}/`
+
+**Subdirectories vary**:
+- `c/`, `c1/` - primary results
+- `p/`, `p1/` - alternate results
+- Search dynamically, don't hardcode
+
+**Files**: `*short_summary*.txt` (case-insensitive search)
+
+**Filename patterns**:
+- HiC assemblies: `{ToLID}_HiC__busco_hap1_busco_short_summary.txt`
+- Standard assemblies: `{ToLID}_busco_short_summary.txt`
+
+**Format**:
+```
+# BUSCO version is: 5.2.2
+# The lineage dataset is: vertebrata_odb10
+...
+	C:94.0%[S:92.4%,D:1.6%],F:2.7%,M:3.3%,n:3354
+```
+
+**Parse line starting with `C:`**: Extract `94.0` from `C:94.0%`
+
+#### 3. Merqury (Assembly QV Scores)
+
+**⚠️ TWO PATH PATTERNS** (structure changed 2022 → 2024):
+
+**Pattern A (Newer - Direct, 2024+)**:
+```
+{assembly}/evaluation/merqury/{ToLID}_qv/output_merqury.tabular
+```
+
+**Pattern B (Older - Nested, 2022)**:
+```
+{assembly}/evaluation/merqury/{c,p}/{ToLID}_qv/output_merqury.tabular
+```
+
+**Strategy**: Try direct path first, then search for nested subdirectories
+
+**File format** (tab-separated, may have header):
+```
+assembly	unique k-mers	common k-mers	QV	error rate
+assembly_01	20197	2133011206	63.4592	4.50896e-07
+assembly_02	19654	2304717679	63.9138	4.06084e-07
+Both	39851	4437728885	63.6894	4.27623e-07
+```
+
+**Parsing**:
+- Skip header line if starts with `assembly\t`
+- QV is always column 4 (index 3)
+- Take first data line (usually assembly_01 or Both)
+
+### Complete Fetching Strategy
 
 ```python
-def search_genomescope_recursive(species_name, tolid):
-    """Search for GenomeScope data across all assembly folders."""
-    species_s3 = species_name.replace(' ', '_')
+def normalize_s3_path(s3_path):
+    """Normalize path for GenomeArk (case sensitivity!)"""
+    if not s3_path:
+        return None
+    # Critical: HiC capitalization
+    s3_path = s3_path.replace('/assembly_vgp_hic_2.0/', '/assembly_vgp_HiC_2.0/')
+    if not s3_path.endswith('/'):
+        s3_path += '/'
+    return s3_path
 
-    # 1. Discover assembly folders
-    result = subprocess.run(
-        ['aws', 's3', 'ls', f's3://genomeark/species/{species_s3}/{tolid}/',
-         '--no-sign-request'],
-        capture_output=True, text=True
-    )
+def fetch_genomescope_data(s3_path):
+    """Fetch with validation"""
+    s3_path = normalize_s3_path(s3_path)
+    tolid = s3_path.rstrip('/').split('/')[-2]
 
-    assembly_folders = []
-    for line in result.stdout.strip().split('\n'):
-        if 'PRE' in line:
-            folder = line.split('PRE')[1].strip().rstrip('/')
-            if folder.startswith('assembly'):
-                assembly_folders.append(folder)
+    # Try ALL THREE filename patterns
+    for filename in [
+        f'{tolid}_genomescope__Summary.txt',   # Pattern A: double underscore
+        f'{tolid}_genomescope_Summary.txt',    # Pattern C: single underscore
+        f'{tolid}_Summary.txt'                  # Pattern B: no prefix
+    ]:
+        file_path = f"{s3_path}evaluation/genomescope/{filename}"
+        result = subprocess.run(['aws', 's3', 'cp', file_path, '-', '--no-sign-request'],
+                               capture_output=True, text=True, timeout=30)
 
-    # 2. Search patterns
-    patterns = [
-        'evaluation/genomescope/{tolid}_genomescope__Summary.txt',
-        'evaluation/genomescope2/{tolid}_genomescope__Summary.txt',
-        'qc/genomescope/{tolid}_genomescope__Summary.txt',
-        'intermediates/genomescope/{tolid}_genomescope__Summary.txt',
-    ]
+        if result.returncode == 0 and result.stdout:
+            # Parse and validate
+            data = parse_genomescope(result.stdout)
 
-    # 3. Try each combination
-    for assembly in assembly_folders:
-        for pattern in patterns:
-            s3_path = f's3://genomeark/species/{species_s3}/{tolid}/{assembly}/{pattern.format(tolid=tolid)}'
-            result = subprocess.run(
-                ['aws', 's3', 'cp', s3_path, '-', '--no-sign-request'],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0 and result.stdout:
-                return result.stdout
+            # Validate heterozygosity range
+            if 'heterozygosity' in data:
+                # Check if range is reasonable
+                if heterozygosity_range > 50.0 or max_het > 95.0:
+                    del data['heterozygosity']  # Skip invalid value
 
+            if data:
+                return data
     return None
+
+def fetch_merqury_data(s3_path):
+    """Fetch from direct or nested paths"""
+    s3_path = normalize_s3_path(s3_path)
+    tolid = s3_path.rstrip('/').split('/')[-2]
+
+    # Try direct path first (newer structure)
+    direct_path = f"{s3_path}evaluation/merqury/{tolid}_qv/output_merqury.tabular"
+    result = subprocess.run(['aws', 's3', 'cp', direct_path, '-', '--no-sign-request'],
+                           capture_output=True, text=True, timeout=30)
+
+    if result.returncode == 0 and result.stdout:
+        # Parse QV from column 4
+        for line in result.stdout.split('\n'):
+            if line.strip() and not line.startswith('assembly\t'):
+                parts = line.split('\t')
+                if len(parts) >= 4:
+                    return {'qv': float(parts[3]), 'path_type': 'direct'}
+
+    # Fallback: search nested subdirectories (older structure)
+    # List subdirectories, try c/, p/, etc.
+    ...
+
+def fetch_busco_data(s3_path):
+    """Search dynamic subdirectories"""
+    s3_path = normalize_s3_path(s3_path)
+
+    # List busco/ subdirectories
+    list_result = subprocess.run(['aws', 's3', 'ls', f"{s3_path}evaluation/busco/", '--no-sign-request'],
+                                capture_output=True, text=True, timeout=10)
+
+    # Find subdirectories (lines with 'PRE')
+    subdirs = [line.split('PRE')[1].strip().rstrip('/')
+               for line in list_result.stdout.split('\n') if 'PRE' in line]
+
+    # Try each subdirectory for short_summary files
+    ...
 ```
 
-### GenomeScope Summary Parsing
+### Common Pitfalls
 
-```python
-def parse_genomescope_summary(content):
-    """Extract genome characteristics from GenomeScope2 summary."""
-    data = {}
-
-    # Genome Haploid Length (max value - second column)
-    match = re.search(r'Genome Haploid Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
-    if match:
-        data['genome_size_genomescope'] = int(match.group(1).replace(',', ''))
-
-    # Heterozygosity percentage (max value)
-    match = re.search(r'Heterozygous \(ab\)\s+[\d.]+%\s+([\d.]+)%', content)
-    if match:
-        data['heterozygosity_percent'] = float(match.group(1))
-
-    # Genome Unique Length (max value)
-    match = re.search(r'Genome Unique Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
-    if match:
-        data['unique_length'] = int(match.group(1).replace(',', ''))
-
-    # Genome Repeat Length (max value)
-    match = re.search(r'Genome Repeat Length\s+[\d,]+\s*bp\s+([\d,]+)\s*bp', content)
-    if match:
-        data['repeat_length'] = int(match.group(1).replace(',', ''))
-
-    # Calculate repeat content percentage
-    if 'repeat_length' in data and 'unique_length' in data:
-        total = data['repeat_length'] + data['unique_length']
-        if total > 0:
-            data['repeat_content_percent'] = (data['repeat_length'] / total) * 100
-
-    return data
-```
+1. **Case sensitivity**: `assembly_vgp_hic_2.0` in table → `assembly_vgp_HiC_2.0` in S3
+2. **Directory evolution**: Merqury moved from nested to direct structure
+3. **Failed QC runs**: Always validate genomescope ranges before use
+4. **Subdirectory variations**: BUSCO/Merqury use different subdir names (c vs c1 vs p)
+5. **File format variations**: Merqury may/may not have header line
+6. **Haplotype-specific files**: HiC assemblies have separate hap1/hap2 BUSCO results
 
 ### Best Practices
 
-1. **Rate limiting**: Add 0.2s delay between successful fetches to be respectful to AWS
-2. **Caching**: Check if file exists locally before fetching
-3. **Timeout**: Use 10-15s timeout per request
-4. **Assembly discovery**: Always discover assemblies dynamically - don't assume structure
-5. **Multiple locations**: GenomeScope data may be in evaluation/, qc/, or intermediates/
-6. **Expected coverage**: ~15-20% of VGP assemblies have GenomeScope data available
+1. **Path normalization**: Always fix case sensitivity
+2. **Try multiple patterns**: Newer → older structure
+3. **Validate data**: Check ranges, detect failed analyses
+4. **Dynamic discovery**: List subdirectories, don't hardcode
+5. **Error handling**: Continue on failures, report what succeeded
+6. **Timeouts**: 10-30s per fetch, don't hang indefinitely
+7. **Rate limiting**: 0.2s delay between fetches (respectful to AWS)
 
-### Common Issues
+### AWS CLI vs boto3
 
-**Species not found**: Some species use different naming (check exact spacing/underscores)
-```bash
-# Search for species
-aws s3 ls s3://genomeark/species/ --no-sign-request | grep -i "species_name"
+For **public buckets** like GenomeArk:
+- **Prefer**: `subprocess` + `aws s3` CLI with `--no-sign-request`
+- **Avoid**: `boto3` (requires credential config even for public access)
+
+```python
+# Simple and works
+cmd = ['aws', 's3', 'cp', s3_path, '-', '--no-sign-request']
+result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 ```
 
-**Assembly folder variations**: Not all use standard names
+### Testing Examples
+
+Confirmed working paths:
 ```bash
-# List all assemblies for a species
-aws s3 ls s3://genomeark/species/{SPECIES}/{TOLID}/ --no-sign-request
-```
+# GenomeScope - Pattern A (double underscore)
+aws s3 cp s3://genomeark/species/Gastrophryne_carolinensis/aGasCar1/assembly_vgp_HiC_2.0/evaluation/genomescope/aGasCar1_genomescope__Summary.txt - --no-sign-request
 
-### AWS CLI Setup
+# GenomeScope - Pattern C (single underscore) ⭐ NEW PATTERN
+aws s3 cp s3://genomeark/species/Platysternon_megacephalum/rPlaMeg1/assembly_vgp_HiC_2.0/evaluation/genomescope/rPlaMeg1_genomescope_Summary.txt - --no-sign-request
 
-```bash
-# Install AWS CLI (no credentials needed for Genome Ark)
-conda install -c conda-forge awscli
+# GenomeScope - Pattern B (no prefix - older)
+aws s3 cp s3://genomeark/species/Spea_bombifrons/aSpeBom1/assembly_vgp_standard_2.0/evaluation/genomescope/aSpeBom1_Summary.txt - --no-sign-request
 
-# Test access
-aws s3 ls s3://genomeark/species/ --no-sign-request | head
+# BUSCO
+aws s3 cp s3://genomeark/species/Gastrophryne_carolinensis/aGasCar1/assembly_vgp_HiC_2.0/evaluation/busco/c/aGasCar1_HiC__busco_hap1_busco_short_summary.txt - --no-sign-request
+
+# Merqury - Direct path (2024+)
+aws s3 cp s3://genomeark/species/Ia_io/mIaxIox2/assembly_vgp_HiC_2.0/evaluation/merqury/mIaxIox2_qv/output_merqury.tabular - --no-sign-request
+
+# Merqury - Nested path (2022)
+aws s3 cp s3://genomeark/species/Gastrophryne_carolinensis/aGasCar1/assembly_vgp_HiC_2.0/evaluation/merqury/aGasCar1_qv/output_merqury.tabular - --no-sign-request
 ```
 
 ## Karyotype Data Curation and Literature Search
@@ -709,6 +836,244 @@ GCA_XXXXXX,12345,Species name,80,40,Brief description,https://doi.org/...
 - Rare/endangered without conservation genetics
 - Recently described species
 - Cryptic species complexes
+
+## Haploid vs Diploid Chromosome Counts in Assembly Analysis
+
+### The Critical Distinction
+
+Genome assembly metadata typically includes **both** haploid and diploid chromosome counts:
+
+- **Haploid count (n)**: Number of chromosomes in a single genome copy
+  - Example: Human n=23 (22 autosomes + X or Y)
+  - Represents unique chromosome types
+- **Diploid count (2n)**: Number of chromosomes in diploid organism
+  - Example: Human 2n=46 (23 pairs)
+  - Represents total chromosomes in a diploid cell
+
+### Common Dataset Column Names
+
+```python
+# Typical column names (exact names vary by dataset):
+df['num_chromosomes']               # Often diploid (2n)
+df['total_number_of_chromosomes']   # Often haploid (n)
+df['karyotype']                     # Usually haploid (n)
+df['num_chromosomes_haploid_adjusted']  # Haploid with sex chr adjustment
+```
+
+**⚠️ WARNING**: Column names are NOT standardized across datasets - always verify which is which!
+
+### Which Count to Use When
+
+**Use HAPLOID (n) for:**
+- ✅ Per-assembly comparisons (scaffolds per assembly)
+- ✅ Chromosome assignment ratios
+- ✅ Expected vs observed chromosome counts
+- ✅ Telomere counts (2 per chromosome × n chromosomes)
+- ✅ Scaffold-to-chromosome mapping
+
+**Use DIPLOID (2n) for:**
+- ✅ Cell-level comparisons
+- ✅ Comparing to diploid karyotypes
+- ✅ Ploidy analyses
+- ✅ Cytogenetic studies
+
+### Real-World Example: VGP Assembly Analysis
+
+**Problem**: Used `num_chromosomes` (diploid) for per-assembly comparison
+
+**Result**: All assemblies appeared to have 2× expected chromosomes
+
+**Fix**: Changed to `total_number_of_chromosomes` (haploid)
+
+**Validation**: Ratio now ~1.0 instead of ~2.0
+
+```python
+# WRONG - uses diploid count
+fig, ax = plt.subplots()
+ax.scatter(df['num_chromosomes'], df['num_scaffolds_assigned'])
+# Result: Everything appears at 2× diagonal
+
+# CORRECT - uses haploid count
+fig, ax = plt.subplots()
+ax.scatter(df['total_number_of_chromosomes'], df['num_scaffolds_assigned'])
+# Result: Expected 1:1 diagonal relationship
+```
+
+### Sex Chromosome Adjustments
+
+Some species have different haploid counts by sex:
+
+- **Male XY systems**: n = autosomes + 2 (X and Y count separately)
+- **Female XX systems**: n = autosomes + 1 (both X chromosomes count as one type)
+- **For telomere counts**: Male XY may need +1 adjustment (X and Y both have telomeres)
+
+**Check for adjusted counts:**
+```python
+# Some datasets provide sex-adjusted haploid counts
+# Example: Human male
+# Karyotype n = 23 (22 autosomes + X or Y)
+# But for telomere counting: 24 (22 autosomes + X + Y both have telomeres)
+
+df['num_chromosomes_haploid_adjusted']  # May add +1 for male XY
+```
+
+### Validation Checks
+
+```python
+# Check if counts are haploid or diploid by testing known species
+human_samples = df[df['species'] == 'Homo sapiens']
+median_count = human_samples['column_name'].median()
+
+if median_count > 40:
+    print("Likely diploid (2n) - expect ~46 for humans")
+elif median_count > 20:
+    print("Likely haploid (n) - expect ~23 for humans")
+else:
+    print("Check data - values unexpectedly low")
+
+# Verify ratios make biological sense
+df['ratio'] = df['scaffolds_assigned'] / df['haploid_count']
+assert 0.5 < df['ratio'].median() < 2.0, "Ratio should be near 1.0 for good assemblies"
+
+# Check for systematic doubling
+if df['ratio'].median() > 1.8:
+    print("WARNING: May be using diploid count - ratios systematically doubled")
+```
+
+### Common Pitfalls
+
+1. **Assuming column names are accurate**
+   - `num_chromosomes` could be either n or 2n
+   - Always validate with known species
+
+2. **Not accounting for sex chromosomes**
+   - Male XY vs Female XX can have different expected counts
+   - Telomere analyses need special handling
+
+3. **Mixing haploid and diploid across analyses**
+   - Be consistent within each analysis
+   - Document which count you're using
+
+4. **Forgetting about polyploids**
+   - Some species are naturally 3n, 4n, 6n, 8n
+   - Check literature for ploidy level
+
+### Key Takeaways
+
+1. **Always verify** which count (n or 2n) a column contains
+2. **Don't trust column names** - validate with known species
+3. **Use haploid (n)** for per-assembly metrics
+4. **Add validation checks** to catch errors early
+5. **Document which count** you're using in code comments
+6. **Account for sex chromosomes** when relevant
+
+## Phylogenetic Tree Species Mapping
+
+### Time Tree Species Replacement
+
+Time Tree databases sometimes use proxy/replacement species when they don't have phylogenetic data for the exact species needed. This creates a mismatch between tree species names and dataset species names.
+
+**Pattern:**
+- Tree contains: Anniella_pulchra (proxy species with available data)
+- Dataset contains: Anniella_stebbinsi (actual species being studied)
+- Time Tree selected Anniella_pulchra as closest relative with data
+
+**Solution Workflow:**
+
+1. **Document replacements** in `species_replacements.json`:
+```json
+{
+  "actual_species_name": "tree_proxy_name",
+  "Anniella_stebbinsi": "Anniella_pulchra",
+  "Pelomedusa_somalica": "Pelomedusa_subrufa"
+}
+```
+
+2. **Update tree file** to use actual dataset names:
+   - Read Newick tree file
+   - Replace proxy names with actual species names
+   - Ensures tree matches dataset exactly
+
+3. **Synchronize all config files** using actual names:
+   - iTOL colorstrip configs
+   - Label configs
+   - Any taxonomic annotation files
+
+4. **Recover missing data** if needed:
+   - Check deprecated datasets for actual species
+   - Proxy species indicates actual species likely exists in data
+   - Add to current dataset after recovery
+
+**Why This Matters:**
+- Prevents "missing species" that actually exist in dataset
+- Ensures tree and dataset species names match exactly
+- Required for iTOL visualization configs to work correctly
+- Improves tree coverage metrics (e.g., 506→508 species)
+
+**Common Files Needing Synchronization:**
+- `Tree_final.nwk` - Main phylogenetic tree
+- `itol_taxonomic_colorstrip_final.txt` - Taxonomic annotations
+- `species_*_methods.csv` - Species classification configs
+- All iTOL visualization config files
+
+### Tree Coverage Analysis Pattern
+
+When reconciling phylogenetic trees with species datasets:
+
+**Coverage Metric:**
+```
+Coverage = (Species in both tree AND dataset) / (Total species in tree) × 100%
+```
+
+**Identifying Missing Species:**
+
+1. **Extract species from tree** (Newick format):
+```python
+with open('Tree_final.nwk', 'r') as f:
+    tree_content = f.read()
+# Extract species names (underscored format)
+tree_species = set(re.findall(r'([A-Z][a-z]+_[a-z]+)', tree_content))
+```
+
+2. **Extract species from dataset**:
+```python
+df = pd.read_csv('species_methods.csv')
+dataset_species = set(df['Species'].str.replace(' ', '_'))
+```
+
+3. **Find missing species**:
+```python
+missing = tree_species - dataset_species
+```
+
+4. **Categorize missing species**:
+   - **Recoverable**: Time Tree replacements or in deprecated datasets
+   - **Phylogenetic context**: Tree-only species for evolutionary context
+   - **Unknown curation**: In dataset but cannot classify
+
+**Recovery Workflow:**
+
+```python
+# Check if missing species are Time Tree replacements
+replacements = json.load(open('species_replacements.json'))
+for species in missing:
+    tree_name = species.replace('_', ' ')
+    if tree_name in replacements.values():
+        actual_name = [k for k,v in replacements.items() if v==tree_name][0]
+        # Search deprecated datasets for actual_name
+        # Recover and add to current dataset
+```
+
+**Acceptable Coverage Levels:**
+- **100%**: Ideal, all tree species have data
+- **99%+**: Excellent, few phylogenetic context species
+- **95-99%**: Good, some context species expected
+- **<95%**: Investigate missing species for recovery opportunities
+
+**Example Results:**
+- Initial: 506/511 species (99.0%)
+- After Time Tree mapping: 508/511 (99.4%)
+- Remaining 3: Phylogenetic context only (acceptable)
 
 ## AGP Format (A Golden Path)
 
@@ -1007,6 +1372,85 @@ if not num_chromosomes and len(row) > 105:
 - Add delays between calls (`time.sleep(0.5)`)
 - Set reasonable timeouts
 - Handle errors gracefully
+
+## GenomeArk S3 Data Access Patterns
+
+### VGP GenomeArk Structure
+
+GenomeArk uses public S3 buckets (no credentials needed):
+```
+s3://genomeark/species/{Species_name}/{ToLID}/assembly_vgp_{type}_2.0/
+                                                        ↑
+                                        HiC (most common), standard, hic (legacy)
+```
+
+**Key Challenges**:
+1. **Case sensitivity**: `hic` vs `HiC` in paths
+2. **Multiple filename patterns**: 3+ variations for GenomeScope files
+3. **Nested subdirectories**: BUSCO/Merqury use variable subdirectory structures
+4. **Missing data**: Not all assemblies have all QC data types
+
+### BUSCO Data Fetching
+
+**Path structure**: `{assembly}/evaluation/busco/{subdir}/short_summary*.txt`
+
+**Strategy**:
+1. List subdirectories in `busco/`
+2. For each subdir, list files looking for `short_summary*.txt`
+3. Parse for completeness percentage and lineage
+
+**Expected coverage**: ~20-30% of VGP assemblies have BUSCO data
+
+### Merqury QV Fetching
+
+**Path patterns** (try in order):
+1. Direct: `{assembly}/evaluation/merqury/{ToLID}_qv/output_merqury.tabular`
+2. Nested: `{assembly}/evaluation/merqury/{subdir}/{ToLID}_qv/output_merqury.tabular`
+
+**Nested subdirs**: Usually 1-2 character names (c, p, c1, p1)
+
+**Output format**: Tab-separated, QV is column 4 (index 3)
+
+### GenomeScope Data Fetching
+
+**Three filename patterns to try**:
+```python
+filenames = [
+    f'{tolid}_genomescope__Summary.txt',   # Double underscore
+    f'{tolid}_genomescope_Summary.txt',    # Single underscore
+    f'{tolid}_Summary.txt',                # No prefix
+]
+```
+
+**Validation**: Skip heterozygosity if range > 50% or max > 95% (indicates failed run)
+
+### S3 Path Normalization
+
+Always normalize paths:
+```python
+def normalize_s3_path(s3_path):
+    s3_path = s3_path.strip()
+    s3_path = s3_path.replace('/assembly_vgp_hic_2.0/', '/assembly_vgp_HiC_2.0/')
+    if not s3_path.endswith('/'):
+        s3_path += '/'
+    return s3_path
+```
+
+### AWS CLI Usage
+
+**Public access** (no credentials):
+```bash
+aws s3 ls s3://genomeark/... --no-sign-request
+aws s3 cp s3://genomeark/.../file.txt - --no-sign-request
+```
+
+**Timeouts**: Use 10-30s timeouts for robustness
+
+### Expected Performance
+
+- S3 path inference: ~5-10 seconds per ToLID
+- QC data fetching: ~1-2 minutes per assembly
+- Full dataset (700+ assemblies): 2-3 hours total
 
 ## Related Skills
 

@@ -856,14 +856,14 @@ When modifying files, especially when multiple similar files exist:
 1. **Always state the FULL path** when making edits:
    ```
    ❌ Bad: "Updating the notebook..."
-   ✅ Good: "Updating /Users/delphine/Workdir/Stats_workflow_run/vgp_workflow_resource_analysis.ipynb"
+   ✅ Good: "Updating /path/to/Stats_workflow_run/vgp_workflow_resource_analysis.ipynb"
    ```
 
 2. **Ask for clarification** if multiple candidates exist:
    ```
    Found two notebooks:
-   1. /Users/delphine/Workdir/Stats_workflow_run/vgp_workflow_resource_analysis.ipynb
-   2. /Users/delphine/Workdir/Stats_workflow_run/sharing/vgp_workflow_resource_analysis.ipynb
+   1. /path/to/Stats_workflow_run/vgp_workflow_resource_analysis.ipynb
+   2. /path/to/Stats_workflow_run/sharing/vgp_workflow_resource_analysis.ipynb
 
    Which one are you running?
    ```
@@ -970,5 +970,5 @@ https://genomeark.s3.amazonaws.com/species/Rhinolophus_ferrumequinum/mRhiFer1/as
 **Not a Quality Problem**: Moderate scatter (std dev ~30%) reflects biological variation and k-mer estimation limitations, not assembly quality issues.
 
 ## References
-- [VGP Galaxy Workflows](https://github.com/Delphine-L/iwc/tree/VGP)
+- [VGP Galaxy Workflows](https://github.com/galaxyproject/iwc) - VGP workflows
 - [Vertebrate Genome Project](https://vertebrategenomesproject.org/)

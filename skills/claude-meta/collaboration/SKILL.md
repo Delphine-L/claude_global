@@ -655,6 +655,35 @@ requires seeing all intermediate steps.
 - Rarely-used edge cases
 - Obvious procedures
 
+### 6. Separating TODOs from Work Products
+
+**Pattern**: Keep work products publication-ready by moving TODOs to tracking system
+
+**Example from data analysis project**:
+
+**Work product** (analysis_files/figures/01_scaffold_n50.md):
+```markdown
+# Figure 1: Scaffold N50 Analysis
+## Analysis
+[Complete, publication-ready text with no TODOs]
+```
+
+**Tracking document** (Obsidian vault or similar):
+```markdown
+# Figure Analysis TODOs
+## Figure 1: Scaffold N50
+- [ ] Run Kruskal-Wallis test
+- [ ] Get sample sizes (n=XXX)
+- [ ] Fill in p-values
+- [ ] Complete interpretation
+```
+
+**Benefits**:
+- Work products always presentable
+- Easy to share analysis files with collaborators
+- Clear separation between "what's done" and "what's next"
+- TODOs don't clutter the actual content
+
 ---
 
 ## Measuring Skill Effectiveness

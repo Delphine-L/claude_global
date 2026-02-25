@@ -48,8 +48,8 @@ You are reviewing our conversation to identify knowledge that should be captured
    - Present all suggestions organized by priority
    - Let user review and select which to apply
    - Update only approved changes
-   - Show git diff for each change if in git repo
-   - Commit with clear, descriptive messages
+   - Show diff for each change made
+   - **CRITICAL**: NEVER perform git operations (add, commit, push) - user manages git themselves
 
 ## IMPORTANT: Skill File Locations
 
@@ -106,13 +106,24 @@ For each approved update:
 3. If creating a new section, place it logically
 4. Maintain consistent formatting
 5. Show the diff
-6. If in git repo, offer to commit with message:
-   ```
-   Update [skill-name]: [brief description of change]
 
-   - Added [specific addition]
-   - [Why it matters]
-   ```
+## ⛔ CRITICAL: Git Management - DO NOT COMMIT
+
+**NEVER perform ANY git operations** (add, commit, push, stash, etc.) for the `$CLAUDE_METADATA` directory.
+
+The user **always** manages git themselves. After making skill updates:
+- Show what files were changed (e.g., with `ls` or summary)
+- Summarize the updates made
+- **STOP** - do not add, commit, or push anything
+- The user will handle git when they're ready
+
+**This applies to**:
+- All changes to `$CLAUDE_METADATA/skills/`
+- All changes to `$CLAUDE_METADATA/commands/`
+- All changes to `$CLAUDE_METADATA/.claude/`
+- Any files in the `$CLAUDE_METADATA` directory tree
+
+**NO EXCEPTIONS** for the metadata directory. The user wants full control over git commits there.
 
 ## After Creating New Skills
 

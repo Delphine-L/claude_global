@@ -510,6 +510,72 @@ def extract_invocation_id(output_json_path):
 
 ---
 
+## API Authentication and Access Patterns
+
+### Galaxy API curl Syntax
+
+When accessing Galaxy API endpoints directly with curl, use this exact syntax:
+
+```bash
+curl -X 'GET' 'https://galaxy.server.org/api/endpoint' \
+  -H 'accept: application/json' \
+  -H 'x-api-key: '$API_KEY_VAR
+```
+
+**Key points:**
+- Use `-X 'GET'` (or POST/PUT/DELETE) with quotes
+- Include `'accept: application/json'` header
+- API key header is `x-api-key:` (not `Authorization:`)
+- Variable expansion works: `'$API_KEY_VAR'` (single quotes with var inside)
+
+### Common API Permission Errors
+
+**Error 403002: "History is not accessible to the current user"**
+
+This occurs when:
+- Accessing workflow invocations that belong to another user's history
+- API key lacks permission to view the specific resource
+- History sharing has not been enabled
+
+**Solutions:**
+1. Verify you're using the correct API key (owner's key or shared user key)
+2. Check if the history/invocation is shared with your user account
+3. For workflow invocations: only the owner or explicitly shared users can access via API
+
+**Testing API key permissions:**
+```bash
+# Test basic API access
+curl -X 'GET' 'https://galaxy.server.org/api/users/current' \
+  -H 'x-api-key: '$API_KEY
+
+# Returns user info if key is valid
+```
+
+### Extracting Workflow Invocation Parameters
+
+To get parameter values from a completed workflow invocation:
+
+```bash
+# Fetch invocation data
+curl -X 'GET' 'https://galaxy.server.org/api/invocations/INVOCATION_ID' \
+  -H 'accept: application/json' \
+  -H 'x-api-key: '$API_KEY > invocation.json
+
+# Extract input parameters
+cat invocation.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+params = data.get('input_step_parameters', {})
+for label, param_data in params.items():
+    value = param_data.get('parameter_value')
+    print(f'{label}: {value}')
+"
+```
+
+The `input_step_parameters` field contains all workflow parameter values with their labels.
+
+---
+
 ## Common Automation Patterns
 
 ### 1. Thread-Safe Galaxy Operations

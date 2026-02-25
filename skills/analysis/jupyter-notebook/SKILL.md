@@ -1,6 +1,7 @@
 ---
 name: jupyter-notebook-analysis
-description: Best practices for creating comprehensive Jupyter notebook data analyses with statistical rigor, outlier handling, and publication-quality visualizations
+description: Best practices for creating comprehensive Jupyter notebook data analyses with statistical rigor, outlier handling, and publication-quality visualizations. Includes Claude API image size helpers.
+version: 1.1.0
 ---
 
 # Jupyter Notebook Analysis Patterns
@@ -14,6 +15,762 @@ Expert knowledge for creating comprehensive, statistically rigorous Jupyter note
 - Implementing outlier removal strategies
 - Building series of related visualizations (10+ figures)
 - Analyzing large datasets with multiple characteristics
+- Building data update/enrichment notebooks with multi-source merging
+- Generating figures for sharing with Claude or other AI tools
+
+## Important: Image Size Constraints
+
+**When generating images to share with Claude**, images must not exceed **8000 pixels** in either dimension. Add this helper to your notebook imports:
+
+```python
+# Standard imports with Claude size checking
+import matplotlib.pyplot as plt
+import seaborn as sns
+from PIL import Image
+
+MAX_CLAUDE_DIM = 7999  # Claude API limit with safety margin
+
+def save_figure(filename, dpi=300, **kwargs):
+    """Save figure with automatic Claude size constraint check."""
+    plt.savefig(filename, dpi=dpi, bbox_inches='tight', **kwargs)
+
+    # Verify and auto-resize if needed
+    img = Image.open(filename)
+    if img.width > MAX_CLAUDE_DIM or img.height > MAX_CLAUDE_DIM:
+        print(f"⚠️  Auto-resizing {filename} for Claude compatibility")
+        print(f"   Original: {img.width}x{img.height}")
+        img.thumbnail((MAX_CLAUDE_DIM, MAX_CLAUDE_DIM), Image.Resampling.LANCZOS)
+        img.save(filename)
+        print(f"   Resized: {img.width}x{img.height}")
+    else:
+        print(f"✓ {filename}: {img.width}x{img.height}")
+
+# Safe figure sizes for Claude (300 DPI)
+FIG_SIZES = {
+    'small': (7, 5),       # 2100x1500 px
+    'medium': (12, 9),     # 3600x2700 px
+    'large': (20, 15),     # 6000x4500 px
+    'max': (26, 26),       # 7800x7800 px - maximum safe
+}
+
+# Use in notebook
+fig, ax = plt.subplots(figsize=FIG_SIZES['medium'])
+# ... plotting code ...
+save_figure('figure.png')
+```
+
+**For complete image size guidance**, see the **data-visualization** skill.
+
+## Data Update Notebook Pattern
+
+### Use Case: Merging and Enriching Multi-Source Datasets
+
+When maintaining datasets that need periodic updates from multiple sources (e.g., Google Sheets + enriched data + external APIs), use a structured notebook pattern.
+
+**Example scenario**: VGP genome metadata updated monthly from Google Sheets, enriched with AWS QC data.
+
+### Notebook Structure Pattern
+
+**1. Configuration Section** (Cell 1-4)
+```python
+# Cell 1: Imports
+import pandas as pd
+import numpy as np
+import glob
+from datetime import datetime
+
+# Cell 2: Configuration
+TODAY = datetime.today().strftime('%Y-%m-%d')
+
+# Google Sheets URL
+SHEET_URL = "https://docs.google.com/spreadsheets/d/.../export?format=csv"
+
+# Conflict resolution strategy
+CONFLICT_RESOLUTION = "NEW"  # "NEW" or "OLD"
+
+# AWS fetching (disabled by default for safety)
+ENABLE_AWS_FETCH = False  # Set to True to fetch from AWS
+TEST_MODE = True  # Process only 5 genomes for testing
+TEST_SAMPLE_SIZE = 5
+
+# Cell 3: Auto-detect previous file
+previous_candidates = glob.glob("Data_table_*_merged.tsv")
+previous_candidates = [f for f in previous_candidates if TODAY not in f]
+previous_candidates.sort(reverse=True)
+
+if previous_candidates:
+    PREVIOUS_FILE = previous_candidates[0]
+    print(f"Using previous file: {PREVIOUS_FILE}")
+else:
+    PREVIOUS_FILE = "Data_raw.tsv"
+    print(f"No previous merged file found, using: {PREVIOUS_FILE}")
+```
+
+**2. Download New Data** (Cell 5)
+```python
+# Download latest from Google Sheets
+new_file = f"Data_table_{TODAY}.tsv"
+df_new = pd.read_csv(SHEET_URL, sep='\t')
+df_new.to_csv(new_file, sep='\t', index=False)
+print(f"Downloaded {len(df_new)} rows to {new_file}")
+```
+
+**3. Create Composite Keys** (Cell 6)
+```python
+# Create unique composite key for merging
+def create_composite_key(df):
+    """Create 3-part composite key for genome assemblies."""
+    key = (
+        df['ToLID'].astype(str) + '|' +
+        df['Assembly_version'].astype(str) + '|' +
+        df['Pipeline_version'].astype(str)
+    )
+    return key
+
+df_new['_composite_key'] = create_composite_key(df_new)
+
+# Verify uniqueness
+print(f"Total rows: {len(df_new)}")
+print(f"Unique keys: {df_new['_composite_key'].nunique()}")
+assert df_new['_composite_key'].nunique() == len(df_new), "Composite key not unique!"
+```
+
+**4. Resolve Duplicates** (Cell 7)
+```python
+def resolve_duplicates(df, key_column='_composite_key', date_column='Curated'):
+    """Keep latest or most complete record for duplicates."""
+    duplicated_keys = df[df.duplicated(key_column, keep=False)][key_column].unique()
+
+    if len(duplicated_keys) == 0:
+        print("No duplicates found")
+        return df
+
+    rows_to_keep = []
+    for key in duplicated_keys:
+        dup_group = df[df[key_column] == key].copy()
+
+        # Keep latest by date
+        if date_column in dup_group.columns:
+            dup_group[date_column] = pd.to_datetime(dup_group[date_column], errors='coerce')
+            if dup_group[date_column].notna().any():
+                latest = dup_group.loc[dup_group[date_column].idxmax()]
+                rows_to_keep.append(latest)
+                continue
+
+        # Keep most complete
+        dup_group['_completeness'] = dup_group.notna().sum(axis=1)
+        most_complete = dup_group.loc[dup_group['_completeness'].idxmax()]
+        rows_to_keep.append(most_complete)
+
+    # Combine with non-duplicates
+    df_clean = pd.concat([
+        df[~df[key_column].isin(duplicated_keys)],
+        pd.DataFrame(rows_to_keep)
+    ], ignore_index=True)
+
+    print(f"Resolved {len(duplicated_keys)} duplicate keys")
+    return df_clean
+
+df_new = resolve_duplicates(df_new)
+```
+
+**5. Merge with Previous Enrichments** (Cell 8-10)
+```python
+# Load previous data
+df_previous = pd.read_csv(PREVIOUS_FILE, sep='\t', dtype=str)
+df_previous['_composite_key'] = create_composite_key(df_previous)
+
+# Merge on composite key
+merged = df_new.merge(df_previous, on='_composite_key', how='left', suffixes=('_new', '_old'))
+
+# Detect conflicts
+conflicts = []
+for col in base_columns:
+    col_new = f"{col}_new"
+    col_old = f"{col}_old"
+
+    if col_new in merged.columns and col_old in merged.columns:
+        mask = (merged[col_new].notna() & merged[col_old].notna() &
+                (merged[col_new] != merged[col_old]))
+        if mask.any():
+            conflicts.append({
+                'column': col,
+                'num_conflicts': mask.sum()
+            })
+
+print(f"Found {len(conflicts)} columns with conflicts")
+```
+
+**6. Conflict Resolution** (Cell 11)
+```python
+# Resolve conflicts based on strategy
+for col in all_columns:
+    col_new = f"{col}_new"
+    col_old = f"{col}_old"
+
+    if col_new in merged.columns and col_old in merged.columns:
+        if CONFLICT_RESOLUTION == "NEW":
+            merged[col] = merged[col_new].fillna(merged[col_old])
+        else:  # "OLD"
+            merged[col] = merged[col_old].fillna(merged[col_new])
+    elif col_new in merged.columns:
+        merged[col] = merged[col_new]
+    elif col_old in merged.columns:
+        merged[col] = merged[col_old]
+
+# Remove suffixed columns
+df_merged = merged[[col for col in merged.columns
+                     if not col.endswith('_new') and not col.endswith('_old')]]
+```
+
+**7. Enrichment from External Sources** (Cell 12-15)
+```python
+# Load unified data source
+df_unified = pd.read_csv('vgp_assemblies_unified.csv')
+
+# Column mapping
+column_mapping = {
+    'Genome_size': 'asm_stats_haploid_number',
+    'Heterozygosity': 'heterozygosity',
+    'Repeat_content': 'repeat_percent'
+}
+
+# Enrich missing data
+for idx, row in df_merged.iterrows():
+    if pd.isna(row['Genome_size']):
+        # Find in unified data
+        unified_match = df_unified[df_unified['tolid'] == row['ToLID']]
+        if not unified_match.empty:
+            for genome_col, unified_col in column_mapping.items():
+                if pd.isna(row[genome_col]):
+                    value = unified_match.iloc[0][unified_col]
+
+                    # Handle type conversion for string columns
+                    if df_merged[genome_col].dtype == 'object':
+                        if isinstance(value, (int, float)):
+                            value = str(int(value)) if value == int(value) else str(value)
+
+                    df_merged.at[idx, genome_col] = value
+```
+
+**8. AWS Fetching (Optional)** (Cell 16-18)
+```python
+if ENABLE_AWS_FETCH:
+    import subprocess
+
+    def fetch_genomescope_data(s3_path, tolid):
+        """Fetch GenomeScope summary from AWS."""
+        # Try newer pattern first
+        patterns = [
+            f"{s3_path}evaluation/genomescope/{tolid}_genomescope__Summary.txt",
+            f"{s3_path}evaluation/genomescope/{tolid}_Summary.txt"
+        ]
+
+        for pattern in patterns:
+            cmd = f"aws s3 cp {pattern} - --no-sign-request"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode == 0:
+                return parse_genomescope(result.stdout)
+        return None
+
+    # Apply to genomes with missing data
+    sample = df_merged.head(TEST_SAMPLE_SIZE) if TEST_MODE else df_merged
+
+    for idx, row in sample.iterrows():
+        if pd.isna(row['Genome_size']) and row['Draft_assembly_folder']:
+            data = fetch_genomescope_data(row['Draft_assembly_folder'], row['ToLID'])
+            if data:
+                df_merged.at[idx, 'Genome_size'] = data.get('genome_size')
+                df_merged.at[idx, 'Heterozygosity'] = data.get('heterozygosity')
+```
+
+**9. Save Results** (Cell 19)
+```python
+# Remove composite key (temporary working column)
+df_merged = df_merged.drop(columns=['_composite_key'])
+
+# Save merged result
+output_file = f"Data_table_{TODAY}_merged.tsv"
+df_merged.to_csv(output_file, sep='\t', index=False)
+print(f"Saved {len(df_merged)} rows to {output_file}")
+```
+
+**10. Summary Report** (Cell 20)
+```python
+print("=== UPDATE SUMMARY ===")
+print(f"New rows: {len(df_new)}")
+print(f"Previous rows: {len(df_previous)}")
+print(f"Merged rows: {len(df_merged)}")
+print(f"Conflicts resolved: {len(conflicts)}")
+print(f"Conflict strategy: {CONFLICT_RESOLUTION}")
+print(f"Enrichment sources: {'AWS + unified CSV' if ENABLE_AWS_FETCH else 'unified CSV only'}")
+```
+
+### Key Design Principles
+
+1. **Auto-detection**: Previous file detection prevents hardcoded paths
+2. **Configuration section**: All settings in one place at top
+3. **Safety defaults**: AWS disabled, test mode enabled by default
+4. **Composite keys**: Handle complex uniqueness requirements
+5. **Conflict reporting**: Show what changed, let user decide
+6. **Type safety**: Handle string/numeric conversions properly
+7. **Progressive enrichment**: Multiple sources tried in order
+8. **Validation**: Assertions check assumptions
+
+### Benefits
+
+- **Reproducible**: Same structure for each update
+- **Safe**: Test mode, disabled AWS by default
+- **Transparent**: Clear reports of what changed
+- **Flexible**: Easy to add new enrichment sources
+- **Maintainable**: Each step in separate cell
+- **Documented**: Configuration + summary in one place
+
+### When to Use This Pattern
+
+- Regular data updates from external sources
+- Merging datasets with complex keys
+- Preserving manually enriched data
+- Multi-source enrichment workflows
+- Data quality validation needs
+
+### Companion Manual
+
+Pair this notebook with a markdown manual documenting:
+- When to run the notebook (monthly, quarterly)
+- What each configuration option does
+- Troubleshooting common errors
+- Examples of running the workflow
+- Expected outputs and verification steps
+
+See VGP `DATA_UPDATE_MANUAL.md` for a complete example.
+
+## Data Enrichment Notebook Pattern
+
+### Two-Stage File Workflow
+
+When building notebooks that enrich/augment existing data:
+
+**Pattern**: Input file → Processing → Output file with distinct naming
+- Input: `data_[date]_merged.tsv` (or similar base name)
+- Output: `data_[date]_enriched.tsv` (or similar enriched name)
+
+**Anti-pattern**: In-place modification (`OUTPUT_FILE = INPUT_FILE`)
+- Overwrites source data
+- Breaks pipeline traceability
+- Makes it hard to re-run enrichment
+
+### Implementation
+
+```python
+# Configuration cell - smart output file detection
+if '_enriched' in INPUT_FILE:
+    OUTPUT_FILE = INPUT_FILE  # Continue enriching existing file
+else:
+    # Extract date from input filename
+    import re
+    date_match = re.search(r'(\d{8})', INPUT_FILE)
+    file_date = date_match.group(1) if date_match else datetime.now().strftime("%Y%m%d")
+
+    OUTPUT_FILE = f"Data_table_{file_date}_enriched.tsv"
+    print(f"📝 Mode: New enrichment (creating {OUTPUT_FILE})")
+```
+
+### Column Addition Pattern
+
+When enriching with new data fields:
+
+```python
+# Add columns if they don't exist (idempotent)
+new_columns = {
+    'Column Name': float,  # or str, int, etc.
+    'Another Column': str
+}
+
+columns_added = []
+for col, dtype in new_columns.items():
+    if col not in df.columns:
+        if dtype == float:
+            df[col] = np.nan
+        else:
+            df[col] = None
+        columns_added.append(col)
+
+if columns_added:
+    print(f"✓ Added {len(columns_added)} columns: {', '.join(columns_added)}")
+```
+
+**Why this matters**:
+- Makes notebooks safe to re-run
+- Works whether columns exist or not
+- Clear reporting of what was added
+
+### Fetching and Saving Pattern
+
+When fetching external data (APIs, S3, etc.):
+
+**Anti-pattern**: Fetch data, print results, don't save
+```python
+data = fetch_from_external_source()
+if data:
+    print(f"Found data: {data['value']}")  # ❌ Only prints!
+    enrichments['source'] += 1
+```
+
+**Correct pattern**: Fetch AND save to DataFrame
+```python
+data = fetch_from_external_source()
+if data:
+    # Save to DataFrame
+    if 'value' in data and pd.isna(row['Column Name']):
+        df.at[idx, 'Column Name'] = data['value']
+        print(f"✓ Saved: {data['value']}")
+    enrichments['source'] += 1
+```
+
+### Enrichment Tracking
+
+Track what was actually saved vs. what was fetched:
+
+```python
+# Good: Track by genomes enriched, not just data found
+aws_enrichments = {
+    'genomescope_fields': 0,    # Count individual fields filled
+    'busco_genomes': 0,          # Count genomes with data saved
+    'merqury_genomes': 0
+}
+
+# In fetch loop
+if data_fetched:
+    df.at[idx, 'column'] = data['value']  # SAVE IT
+    aws_enrichments['busco_genomes'] += 1  # Track it was saved
+```
+
+## AWS Enrichment Notebook Pattern (GenomeArk)
+
+When creating notebooks to enrich existing CSV datasets with QC data from AWS S3 (GenomeArk):
+
+### Notebook Structure for AWS Enrichment
+
+**1. Configuration Cell (Safety Defaults)**
+```python
+import pandas as pd
+import subprocess
+import re
+
+# File paths
+INPUT_FILE = "data/vgp_assemblies_unified_corrected.csv"
+OUTPUT_FILE = "data/vgp_assemblies_unified_corrected_enriched.csv"
+
+# AWS fetching (DISABLED by default)
+ENABLE_AWS_FETCH = False  # Set to True to fetch from AWS
+TEST_MODE = True          # Process only sample for testing
+TEST_SAMPLE_SIZE = 5
+```
+
+**Why safety defaults:**
+- Prevents accidental full AWS fetch (expensive, time-consuming)
+- Forces user to explicitly enable fetching
+- Test mode allows validation with small sample first
+
+**2. Add New Columns Cell**
+```python
+# Add new columns if they don't exist (idempotent)
+new_columns = {
+    'busco_completeness': float,
+    'busco_lineage': str,
+    'merqury_qv': float
+}
+
+columns_added = []
+for col, dtype in new_columns.items():
+    if col not in df.columns:
+        if dtype == float:
+            df[col] = float('nan')
+        else:
+            df[col] = None
+        columns_added.append(col)
+
+if columns_added:
+    print(f"✓ Added {len(columns_added)} new columns: {', '.join(columns_added)}")
+else:
+    print("✓ All columns already exist")
+```
+
+**3. S3 Path Normalization Function**
+```python
+def normalize_s3_path(s3_path):
+    """Normalize S3 path for GenomeArk."""
+    if not s3_path or pd.isna(s3_path):
+        return None
+
+    s3_path = s3_path.strip()
+
+    # Fix case sensitivity: hic → HiC
+    s3_path = s3_path.replace('/assembly_vgp_hic_2.0/', '/assembly_vgp_HiC_2.0/')
+
+    # Ensure trailing slash
+    if not s3_path.endswith('/'):
+        s3_path += '/'
+
+    return s3_path
+```
+
+**4. AWS Fetching Functions with Multiple Patterns**
+```python
+def fetch_genomescope_data(s3_path, tolid):
+    """Fetch GenomeScope summary from GenomeArk S3.
+
+    Tries multiple filename patterns due to historical variations.
+    """
+    if not s3_path:
+        return None
+
+    # Try multiple GenomeScope filename patterns
+    patterns = [
+        f'evaluation/genomescope/{tolid}_genomescope__Summary.txt',  # Double underscore
+        f'evaluation/genomescope/{tolid}_genomescope_Summary.txt',   # Single underscore
+        f'evaluation/genomescope/{tolid}_Summary.txt',               # No prefix
+    ]
+
+    for pattern in patterns:
+        full_path = f"{s3_path}{pattern}"
+        cmd = ['aws', 's3', 'cp', full_path, '-', '--no-sign-request']
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            # Parse GenomeScope format
+            data = parse_genomescope(result.stdout)
+            if data:
+                data['tool'] = 'genomescope'
+                return data
+
+    return None
+
+def fetch_busco_data(s3_path):
+    """Fetch BUSCO completeness from GenomeArk S3."""
+    if not s3_path:
+        return None
+
+    # List subdirectories in busco/
+    busco_base = f"{s3_path}evaluation/busco/"
+    list_cmd = ['aws', 's3', 'ls', busco_base, '--no-sign-request']
+
+    result = subprocess.run(list_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+
+    # Find subdirectories (lineage-specific)
+    subdirs = [line.split()[-1] for line in result.stdout.split('\n')
+               if 'PRE' in line]
+
+    # Try each subdirectory for short_summary*.txt
+    for subdir in subdirs:
+        summary_path = f"{busco_base}{subdir}"
+        ls_cmd = ['aws', 's3', 'ls', summary_path, '--recursive', '--no-sign-request']
+
+        ls_result = subprocess.run(ls_cmd, capture_output=True, text=True)
+
+        # Find short_summary file
+        for line in ls_result.stdout.split('\n'):
+            if 'short_summary' in line and line.endswith('.txt'):
+                file_path = 's3://' + line.split()[-1]
+
+                # Fetch and parse
+                fetch_cmd = ['aws', 's3', 'cp', file_path, '-', '--no-sign-request']
+                fetch_result = subprocess.run(fetch_cmd, capture_output=True, text=True)
+
+                if fetch_result.returncode == 0:
+                    return parse_busco(fetch_result.stdout)
+
+    return None
+
+def fetch_merqury_data(s3_path, tolid):
+    """Fetch Merqury QV from GenomeArk S3."""
+    if not s3_path:
+        return None
+
+    qv_path = f"{s3_path}evaluation/merqury/{tolid}.qv"
+    cmd = ['aws', 's3', 'cp', qv_path, '-', '--no-sign-request']
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        return parse_merqury(result.stdout)
+
+    return None
+```
+
+**5. Main Enrichment Loop with Tracking**
+```python
+if ENABLE_AWS_FETCH:
+    print("⚠️ AWS FETCH ENABLED - This will take time and bandwidth")
+
+    sample = df.head(TEST_SAMPLE_SIZE) if TEST_MODE else df
+
+    # Track enrichments
+    enrichments = {
+        'genomescope': 0,
+        'busco': 0,
+        'merqury': 0
+    }
+
+    for idx, row in sample.iterrows():
+        tolid = row['tolid']
+        s3_path = normalize_s3_path(row.get('s3_path'))
+
+        if not s3_path:
+            continue
+
+        print(f"\nProcessing {tolid} ({idx+1}/{len(sample)})...")
+
+        # Fetch GenomeScope (if missing)
+        if pd.isna(row['genome_size_genomescope']):
+            gs_data = fetch_genomescope_data(s3_path, tolid)
+            if gs_data:
+                df.at[idx, 'genome_size_genomescope'] = gs_data.get('genome_size')
+                df.at[idx, 'heterozygosity_percent'] = gs_data.get('heterozygosity')
+                enrichments['genomescope'] += 1
+                print(f"  ✓ GenomeScope: {gs_data.get('genome_size')} bp")
+
+        # Fetch BUSCO (if missing)
+        if pd.isna(row['busco_completeness']):
+            busco_data = fetch_busco_data(s3_path)
+            if busco_data:
+                df.at[idx, 'busco_completeness'] = busco_data.get('completeness')
+                df.at[idx, 'busco_lineage'] = busco_data.get('lineage')
+                enrichments['busco'] += 1
+                print(f"  ✓ BUSCO: {busco_data.get('completeness')}% ({busco_data.get('lineage')})")
+
+        # Fetch Merqury QV (if missing)
+        if pd.isna(row['merqury_qv']):
+            merqury_data = fetch_merqury_data(s3_path, tolid)
+            if merqury_data:
+                df.at[idx, 'merqury_qv'] = merqury_data.get('qv')
+                enrichments['merqury'] += 1
+                print(f"  ✓ Merqury: QV={merqury_data.get('qv')}")
+
+    # Report enrichment summary
+    print("\n=== ENRICHMENT SUMMARY ===")
+    print(f"Genomes processed: {len(sample)}")
+    print(f"GenomeScope enriched: {enrichments['genomescope']}")
+    print(f"BUSCO enriched: {enrichments['busco']}")
+    print(f"Merqury enriched: {enrichments['merqury']}")
+else:
+    print("⚠️ AWS FETCH DISABLED - Set ENABLE_AWS_FETCH=True to fetch data")
+```
+
+**6. Save Output Cell**
+```python
+# Save enriched dataset
+df.to_csv(OUTPUT_FILE, index=False)
+print(f"\n✓ Saved enriched dataset: {OUTPUT_FILE}")
+print(f"  Size: {len(df)} assemblies, {len(df.columns)} columns")
+
+# Calculate coverage
+for col in ['busco_completeness', 'merqury_qv']:
+    coverage = df[col].notna().sum()
+    pct = 100 * coverage / len(df)
+    print(f"  {col}: {coverage}/{len(df)} ({pct:.1f}%)")
+```
+
+### Key Design Patterns
+
+**Safety First:**
+- `ENABLE_AWS_FETCH = False` by default
+- `TEST_MODE = True` by default
+- User must consciously enable production mode
+
+**Idempotent Column Addition:**
+- Adding columns checks if they exist first
+- Safe to re-run notebook multiple times
+- No errors if columns already present
+
+**Multiple Filename Patterns:**
+- GenomeScope has 3 different naming conventions over time
+- Try all patterns until one succeeds
+- Handles historical data inconsistencies
+
+**S3 Path Normalization:**
+- Fix case sensitivity issues (hic → HiC)
+- Ensure trailing slashes
+- Handle missing/null paths gracefully
+
+**Conditional Fetching:**
+- Only fetch if field is missing (`pd.isna()`)
+- Preserves manually curated data
+- Allows incremental enrichment
+
+**Progress Tracking:**
+- Print progress for each genome
+- Track successful enrichments by source
+- Report final coverage statistics
+
+### Benefits
+
+1. **Safe**: Won't accidentally fetch full dataset
+2. **Testable**: Validate with 5 samples before full run
+3. **Resumable**: Can stop and restart without losing progress
+4. **Efficient**: Only fetches missing data
+5. **Robust**: Handles multiple filename patterns and path variations
+6. **Transparent**: Clear reporting of what was fetched
+
+### Common Usage Pattern
+
+```python
+# First run: Test mode
+ENABLE_AWS_FETCH = True
+TEST_MODE = True
+TEST_SAMPLE_SIZE = 5
+# Run notebook → verify 5 samples work correctly
+
+# Second run: Production mode
+ENABLE_AWS_FETCH = True
+TEST_MODE = False
+# Run notebook → fetch all missing data (2-3 hours)
+
+# Subsequent runs: Skip AWS
+ENABLE_AWS_FETCH = False
+# Notebook loads enriched data without re-fetching
+```
+
+### Expected Timing
+
+- **Test mode (5 samples)**: 30-60 seconds
+- **Full enrichment (700 samples)**: 2-3 hours
+- **Reason**: AWS S3 API rate limits, network latency
+
+### Coverage Expectations
+
+For VGP GenomeArk data:
+- GenomeScope: 40-60% (older tool, not all assemblies)
+- BUSCO: 20-40% (compute-intensive, selective)
+- Merqury: 15-30% (newer tool, recent assemblies)
+
+Coverage varies based on assembly age and QC pipeline version.
+
+### Configuration Cell Reporting
+
+Configuration cells should clearly report their intended behavior:
+
+```python
+# Good: Clear mode indication
+if '_enriched' in INPUT_FILE:
+    OUTPUT_FILE = INPUT_FILE
+    print(f"📝 Mode: Continue enrichment")
+else:
+    OUTPUT_FILE = f"Data_{date}_enriched.tsv"
+    print(f"📝 Mode: New enrichment")
+
+print(f"\nConfiguration:")
+print(f"  Input:  {INPUT_FILE}")
+print(f"  Output: {OUTPUT_FILE}")
+print(f"  Test mode: {'ON (3 samples)' if TEST_MODE else 'OFF (all data)'}")
+```
+
+**Benefits**:
+- User immediately knows what notebook will do
+- Prevents accidental overwrites
+- Makes test vs. production runs obvious
 
 ## Direct Notebook Editing with NotebookEdit Tool
 
@@ -220,6 +977,164 @@ NotebookEdit(
     cell_type="markdown",
     new_source="content"
 )
+```
+
+## Updating Multiple Related Cells
+
+### Systematic Metric Changes Across Notebook
+
+When replacing a metric throughout an analysis notebook (e.g., changing from absolute counts to ratios), update in dependency order to prevent errors.
+
+**Update Order**:
+1. **Data loading cell**: Add calculation for new metric
+2. **Metric definition cell**: Update the metrics list
+3. **All plotting cells**: Use the new metric automatically via the metrics list
+
+**Example: Switching from Absolute to Ratio Metric**
+
+```python
+# Step 1: Data loading cell - add calculation
+df = pd.read_csv('data.csv')
+df['telomere_ratio'] = df['telomere_count'] / df['expected_chromosomes']
+
+# Step 2: Metrics definition cell - update list
+metrics = [
+    ('scaffold_n50', 'Scaffold N50 (bp)', True),
+    ('telomere_ratio', 'Telomere Ratio (Found/Expected)', True),  # Changed
+    ('chr_percentage', 'Chromosome Assignment (%)', True),
+]
+
+# Step 3: Plotting cells automatically use new metric via loop
+fig, axes = plt.subplots(2, 3, figsize=(14, 9))
+axes = axes.flatten()
+
+for idx, (metric, label, higher_better) in enumerate(metrics):
+    ax = axes[idx]
+    # Plot using metric, label from the list
+    ax.scatter(df['year'], df[metric])
+    ax.set_ylabel(label)
+    ax.set_title(label, fontweight='bold')
+```
+
+**Benefits of This Approach**:
+- **Single source of truth**: Metrics list defines all metrics used
+- **Update once, applies everywhere**: Change metric list, all plots update
+- **Prevents inconsistencies**: Can't accidentally miss updating one plot
+- **Easy to add/remove metrics**: Just edit the list
+
+**Common Pattern: Loop-Based Multi-Panel Figures**
+
+```python
+# Define metrics once
+metrics = [
+    ('metric_name', 'Display Label', higher_is_better),
+    # ... add more
+]
+
+# All plots use the same structure
+fig, axes = plt.subplots(2, 3, figsize=(14, 9))
+for idx, (metric, label, higher_better) in enumerate(metrics):
+    ax = axes.flatten()[idx]
+
+    # Plotting logic
+    for category in categories:
+        data = df[df['category'] == category]
+        ax.scatter(data['x'], data[metric], label=category)
+
+    ax.set_ylabel(label)
+    ax.set_title(label, fontweight='bold')
+```
+
+**When to Use This Pattern**:
+- Multiple figures showing the same metric
+- Multi-panel figures with different metrics
+- Systematic metric updates across analysis
+- Adding/removing metrics from analysis
+
+**Example Use Case**: Changing from absolute telomere counts to normalized ratios across 5 figures required only 2 cell edits instead of 15+ individual plot updates.
+
+## Normalized vs Absolute Metrics
+
+### When to Use Ratios Instead of Counts
+
+**Problem**: Absolute counts can't be fairly compared across groups with different expected values.
+
+**Example: Telomere Counts**
+- Species A: 20 telomeres found, 50 chromosomes expected
+- Species B: 15 telomeres found, 20 chromosomes expected
+- **Which is better?** Can't tell from absolute values!
+
+**Solution**: Use ratio = found / expected
+- Species A: 20/50 = 0.40 (40%)
+- Species B: 15/20 = 0.75 (75%) ← clearly better!
+
+### Implementation Pattern
+
+```python
+# Add ratio calculation in data loading cell
+df = pd.read_csv('assemblies.csv')
+df['telomere_ratio'] = df['telomeres_found'] / df['chromosomes_expected']
+
+# Update metrics list to use ratio instead of count
+metrics = [
+    # Before: ('telomeres_found', 'Complete Telomeres', True),
+    ('telomere_ratio', 'Telomere Ratio (Found/Expected)', True),
+]
+
+# All plots automatically switch to using the ratio
+```
+
+### Benefits of Normalized Metrics
+
+**Interpretability**:
+- Ratio of 1.0 = perfect (all expected features present)
+- Ratio of 0.5 = half present
+- Ratio > 1.0 = more than expected (e.g., duplications)
+
+**Comparability**:
+- Fair comparison across species with different karyotypes
+- Can identify systematic patterns vs species-specific effects
+- Removes confounding effect of different expected values
+
+**Statistical Power**:
+- Reduces variance caused by different expected values
+- Improves detection of real biological/technical effects
+- Makes statistical tests more sensitive
+
+### Common Normalized Metrics in Genomics
+
+| Absolute Metric | Normalized Version | Formula |
+|----------------|-------------------|---------|
+| Chromosomes assigned | Assignment percentage | `assigned / total * 100` |
+| Telomeres found | Telomere ratio | `found / expected_chromosomes` |
+| Gaps in assembly | Gap density | `gaps / assembly_length * 100` |
+| Contigs assembled | Reduction ratio | `initial_contigs / final_contigs` |
+| Bases in scaffolds | N50 (size-weighted median) | Cumulative length metric |
+
+### When to Keep Absolute Metrics
+
+Keep absolute values when:
+- The expected value is constant across all samples
+- You're tracking total volume/magnitude changes
+- Supplementary material where space allows both
+
+**Best Practice**: Provide both absolute and normalized in supplementary materials when space allows. Use normalized for main figures and comparisons.
+
+### Example: Multi-Species Assembly Quality
+
+```python
+# Load assembly data
+df = pd.read_csv('assemblies.csv')
+
+# Calculate normalized metrics
+df['telomere_ratio'] = df['telomeres_found'] / df['chromosomes_expected']
+df['gap_density'] = (df['gap_bases'] / df['assembly_length']) * 100
+df['chr_assignment_pct'] = (df['chr_assigned_bases'] / df['total_bases']) * 100
+
+# Now can fairly compare across species
+for species in df['species'].unique():
+    species_data = df[df['species'] == species]
+    print(f"{species}: telomere_ratio = {species_data['telomere_ratio'].mean():.2f}")
 ```
 
 ## Analyzing Notebook Figure Usage
@@ -499,6 +1414,55 @@ for i, (sp, sp_data) in enumerate(species_by_gc_content[:10], 1):
 - Never use generic names (`data`, `item`, `value`) as loop variables
 - Use prefixed names (`sp_data`, `row_data`, `inv_data`)
 - Add validation cells that check variable types
+
+### Cell Execution Order with NotebookEdit
+
+**Problem**: When adding cells with `NotebookEdit`, variable definitions must come before usage, but cell numbering doesn't update automatically.
+
+**Error Pattern**:
+```python
+# Cell 14: Uses aws_available ✗
+if aws_available:
+    ...
+
+# Cell 16: Defines aws_available ✓
+aws_available = check_aws_cli()
+```
+
+**Error**: `NameError: name 'aws_available' is not defined`
+
+**Why This Happens**: When you insert cells programmatically, they're added in the file but notebooks execute cells in the order they're run, not their position in the file.
+
+**Solution**: Insert prerequisite cells BEFORE cells that use the variables:
+
+```python
+# Insert new cell AFTER cell-12 (so it becomes cell-13, before old cell-13 that uses it)
+NotebookEdit(
+    notebook_path="...",
+    cell_id="cell-12",
+    edit_mode="insert",  # Creates new cell after cell-12
+    new_source="aws_available = check_aws_cli()"
+)
+```
+
+**Critical**: After adding cells, instruct user to **Restart & Run All** to ensure clean execution order.
+
+**Prevention**: When designing notebooks with dependencies:
+1. Define all helper functions first (Section: Helper Functions)
+2. Define all global variables needed (Section: Configuration/Setup)
+3. Use dependent variables only in later sections
+
+**Alternative - Defensive Check**:
+```python
+try:
+    if aws_available:
+        ...
+except NameError:
+    print("⚠ Run previous cells first to define aws_available")
+    aws_available = False
+```
+
+**Best Practice**: Always test notebooks with "Restart & Run All" after programmatic modifications to catch execution order issues.
 - Run "Restart & Run All" regularly to catch issues early
 
 **Common shadowing patterns to avoid**:
@@ -560,6 +1524,261 @@ verify_required_columns(df, required)
 if '--debug' in sys.argv or len(df.columns) < 10:
     print(f"Columns ({len(df.columns)}): {df.columns.tolist()}")
 ```
+
+## Splitting Large Notebooks
+
+### When to Split
+
+Split notebooks when they contain multiple distinct analyses that:
+- Can run independently
+- Have different execution times
+- Serve different purposes (e.g., technology effects vs temporal trends)
+- Would benefit from modular execution
+
+### Splitting Strategy
+
+**1. Identify Analysis Boundaries**
+- Look for natural divisions (e.g., different research questions)
+- Check for shared vs unique dependencies
+- Consider which cells can be shared vs must be customized
+
+**2. Common Pitfalls When Splitting**
+
+❌ **Missing Calculated Columns**: Columns created in code (not in CSV) must be recreated
+```python
+# Original notebook created this:
+df['telomere_ratio'] = df['telomere_cat0_both_terminal'] / df['num_chromosomes_expected']
+
+# Split notebook must recreate it - won't exist in data file!
+```
+
+❌ **Missing Variable Definitions**: Variables defined in shared setup cells
+```python
+# These must be in BOTH notebooks:
+category_colors = {'Phased+Dual': '#0072B2', ...}
+df['year_numeric'] = df['release_year']
+```
+
+❌ **Stale Notebook Metadata**: Jupyter execution state can cause issues
+```python
+# Clean all execution state before testing:
+import json
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+for cell in nb['cells']:
+    if cell['cell_type'] == 'code':
+        cell['execution_count'] = None
+        cell['outputs'] = []
+```
+
+**3. Proper Splitting Workflow**
+
+```python
+import json
+
+# Load original notebook
+with open('Original_Notebook.ipynb', 'r') as f:
+    original = json.load(f)
+
+# Create new notebook with clean structure
+new_nb = {
+    "cells": [],
+    "metadata": original["metadata"],  # Preserve original metadata
+    "nbformat": original["nbformat"],
+    "nbformat_minor": original["nbformat_minor"]
+}
+
+# Add cells - mix of custom and reused
+new_nb["cells"].append({
+    "cell_type": "markdown",
+    "metadata": {},
+    "source": ["# New Notebook Title"]
+})
+
+# Custom data loading with ALL required calculations
+new_nb["cells"].append({
+    "cell_type": "code",
+    "execution_count": None,
+    "metadata": {},
+    "outputs": [],
+    "source": [
+        "df = pd.read_csv('data.csv')\n",
+        "# Recreate calculated columns\n",
+        "df['year_numeric'] = df['release_year']\n",
+        "df['telomere_ratio'] = df['col_a'] / df['col_b']"
+    ]
+})
+
+# Reuse complex cells from original
+new_nb["cells"].append(original["cells"][25])  # Plotting cell
+
+# Save
+with open('New_Notebook.ipynb', 'w') as f:
+    json.dump(new_nb, f, indent=2)
+```
+
+**4. Testing Split Notebooks**
+
+```bash
+# Test execution (don't rely on manual testing)
+jupyter nbconvert --to notebook --execute New_Notebook.ipynb --output Test_Output.ipynb
+
+# Check for errors
+python3 << 'EOF'
+import json
+with open('Test_Output.ipynb', 'r') as f:
+    nb = json.load(f)
+for i, cell in enumerate(nb['cells']):
+    if cell['cell_type'] == 'code':
+        for output in cell.get('outputs', []):
+            if output.get('output_type') == 'error':
+                print(f"Error in cell {i}: {output.get('ename')}")
+EOF
+```
+
+**5. Checklist for Split Notebooks**
+
+- [ ] All calculated columns recreated in data loading
+- [ ] All variable definitions included (colors, configs, etc.)
+- [ ] Notebook metadata preserved from original
+- [ ] Execution state cleaned (execution_count = None)
+- [ ] Tested with `jupyter execute` (not just manual run)
+- [ ] Figures generate successfully
+- [ ] Statistics files created
+- [ ] Documentation updated (MANIFEST.md)
+
+### Debugging Jupyter Execution Errors
+
+**Symptom**: `jupyter execute` or `nbconvert --execute` fails with `KeyError` or `NameError`, but running the same code in Python works perfectly.
+
+**Root Causes**:
+
+1. **Corrupted Notebook JSON Structure**
+   - Cell metadata issues
+   - Execution state conflicts
+   - Malformed cell source arrays
+
+2. **Variable Scoping in Notebook Execution**
+   - Jupyter's kernel state differs from direct Python execution
+   - Cells may execute in unexpected order during automated execution
+
+**Debugging Strategy**:
+
+```python
+# Step 1: Test cells work in isolation
+import pandas as pd
+# Run each cell's code manually
+df = pd.read_csv('data.csv')
+df['year_numeric'] = df['release_year']
+# ... verify each step works
+
+# Step 2: Clean notebook execution state
+import json
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+for cell in nb['cells']:
+    if cell['cell_type'] == 'code':
+        cell['execution_count'] = None
+        cell['outputs'] = []
+with open('notebook.ipynb', 'w') as f:
+    json.dump(nb, f, indent=2)
+
+# Step 3: If still failing, rebuild notebook from scratch
+# Use original metadata but fresh cell structure
+```
+
+**When Manual Test Succeeds but Jupyter Fails → Rebuild**:
+
+If code works in Python but Jupyter execution fails after cleaning execution state, the notebook JSON structure is likely corrupted. Solution: Rebuild from scratch using original cells.
+
+```python
+# Rebuild with clean structure
+new_nb = {
+    "cells": [],
+    "metadata": original["metadata"],  # Use original metadata!
+    "nbformat": 4,
+    "nbformat_minor": 4
+}
+# Add cells systematically, test incrementally
+```
+
+**Prevention**:
+- Always preserve original notebook metadata when creating new notebooks
+- Clean execution state before committing notebooks
+- Test with `jupyter execute` before considering notebook "done"
+
+### Testing and Validation
+
+**Level 1: Syntax Check**
+```python
+import json
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+all_code = '\n'.join(''.join(cell['source']) for cell in nb['cells'] if cell['cell_type'] == 'code')
+compile(all_code, '<notebook>', 'exec')  # Raises SyntaxError if invalid
+```
+
+**Level 2: Manual Execution**
+```python
+# Execute cells manually in sequence
+namespace = {}
+for cell in nb['cells']:
+    if cell['cell_type'] == 'code':
+        exec('\n'.join(cell['source']), namespace)
+```
+
+**Level 3: Jupyter Execution**
+```bash
+# The gold standard - tests actual Jupyter execution
+jupyter nbconvert --to notebook --execute notebook.ipynb --output test.ipynb
+```
+
+**Level 4: Verify Outputs**
+```python
+# Check executed notebook for errors
+with open('test.ipynb', 'r') as f:
+    nb = json.load(f)
+for cell in nb['cells']:
+    for output in cell.get('outputs', []):
+        if output.get('output_type') == 'error':
+            print(f"Error: {output.get('ename')}: {output.get('evalue')}")
+```
+
+**Test Incrementally When Debugging**:
+```python
+# If full execution fails, test partial execution
+jupyter nbconvert --execute --to notebook \
+    --ExecutePreprocessor.timeout=60 \
+    --execute-preprocessor-timeout=60 \
+    notebook.ipynb
+```
+
+### Debugging Techniques
+
+**Converting Notebook to Script for Testing**
+
+When Jupyter execution fails mysteriously, convert to Python script:
+
+```python
+import json
+
+with open('notebook.ipynb', 'r') as f:
+    nb = json.load(f)
+
+# Extract code cells
+script_lines = []
+for cell in nb['cells']:
+    if cell['cell_type'] == 'code':
+        script_lines.extend(cell['source'])
+        script_lines.append('\n')
+
+with open('notebook_script.py', 'w') as f:
+    f.write('\n'.join(script_lines))
+```
+
+Then run: `python3 notebook_script.py`
+
+**Note**: This may hang on plotting code (waiting for display). Use for debugging only.
 
 ## Outlier Handling Best Practices
 
@@ -1277,6 +2496,226 @@ with open('original_cropped.svg', 'w') as f:
 - Doesn't handle complex transformations
 - May cut off content if not careful (iterate and check visually)
 
+## Dual-Notebook System: Code vs Presentation
+
+### The Problem with Single Large Notebooks
+
+Trying to create a single notebook that serves both purposes leads to:
+- 📄 Unwieldy files (25,000+ lines)
+- 🐌 Slow to load and execute
+- 🔀 Mixed purposes (code + narrative + documentation)
+- 🔧 Hard to maintain and update
+- 📝 Difficult to share with different audiences
+
+### The Solution: Two Complementary Notebooks
+
+Maintain **two separate notebooks** with different purposes:
+
+#### 1. Code-Based Analysis Notebook
+
+**Purpose**: Execute analyses, generate figures, ensure reproducibility
+
+**Contains**:
+- Data loading and validation
+- Statistical analyses and tests
+- Figure generation code
+- Quality checks and debugging
+- All computational work
+
+**Characteristics**:
+- Heavy on code cells
+- Light on narrative
+- Executable top-to-bottom
+- Version controlled
+- Updated frequently during analysis
+
+**File naming**: `Analysis_Name_3Categories.ipynb`
+
+**Example structure**:
+```python
+# Cell 1: Imports and setup
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Cell 2: Load data
+df = pd.read_csv('data/dataset.csv')
+
+# Cell 3: Validate data
+assert len(df) == expected_n
+
+# Cell 4: Generate Figure 1
+fig, ax = plt.subplots()
+# ... plotting code ...
+plt.savefig('figures/fig1.png', dpi=300)
+
+# Cell 5: Statistical test for Figure 1
+from scipy.stats import mannwhitneyu
+stat, pval = mannwhitneyu(group1, group2)
+```
+
+#### 2. Presentation Notebook
+
+**Purpose**: Display results, document findings, prepare for publication
+
+**Contains**:
+- Figure displays (not generation)
+- Comprehensive figure captions
+- Detailed analyses and interpretations
+- Methods documentation
+- Statistical summaries
+- Conclusions
+
+**Characteristics**:
+- Heavy on markdown
+- Light on code (just figure loading)
+- Narrative-focused
+- Publication-ready
+- Updated after analysis stabilizes
+
+**File naming**: `Analysis_Name_3Categories_Presentation.ipynb`
+
+**Example structure**:
+```markdown
+# Three-Category Curation Analysis
+
+## Figure 1: Scaffold N50 Comparison
+
+```python
+from IPython.display import Image, display
+display(Image('figures/fig1.png'))
+```
+
+### Figure Caption
+**Figure 1. Scaffold N50 increases with dual curation.**
+(A) Comparison across three categories...
+[Comprehensive caption]
+
+### Analysis
+The scaffold N50 shows a clear hierarchy...
+[Detailed interpretation]
+
+### Key Findings
+- Phased+Dual: median N50 = X Mb (significantly higher, p<0.001)
+- Phased+Single: median N50 = Y Mb
+- Pri/alt+Single: median N50 = Z Mb
+```
+
+### Workflow Integration
+
+**During active analysis:**
+1. Work in **Code Notebook**
+2. Generate and refine figures
+3. Run statistical tests
+4. Fix data issues
+
+**After analysis stabilizes:**
+1. Create **Presentation Notebook**
+2. Display final figures
+3. Write detailed analyses
+4. Document methods
+5. Prepare for publication
+
+**When figures change:**
+1. Update in **Code Notebook**
+2. Regenerate figures
+3. Update paths/captions in **Presentation Notebook** (minimal changes)
+
+### Synchronization Strategy
+
+**Keep synchronized:**
+- Figure file paths
+- Statistical results (p-values, effect sizes)
+- Sample sizes
+- Methods descriptions
+
+**Use code notebook as single source of truth for:**
+- Figure generation
+- Statistical computations
+- Data processing decisions
+
+**Use presentation notebook for:**
+- Narrative and interpretation
+- Biological context
+- Literature connections
+- Publication formatting
+
+### File Organization
+
+```
+project/
+├── Analysis_Name_3Categories.ipynb          # Code notebook
+├── Analysis_Name_3Categories_Presentation.ipynb  # Presentation
+├── figures/
+│   └── analysis_name/
+│       ├── fig1.png
+│       ├── fig2.png
+│       └── ...
+├── data/
+│   └── dataset.csv
+└── scripts/
+    └── generate_figures.py  # Extracted from code notebook
+```
+
+### Benefits
+
+**Code Notebook:**
+- ✅ Fast execution (no heavy markdown)
+- ✅ Easy debugging
+- ✅ Clear computational workflow
+- ✅ Version control friendly
+
+**Presentation Notebook:**
+- ✅ Publication-ready formatting
+- ✅ Comprehensive documentation
+- ✅ Easy to share with collaborators
+- ✅ Focused narrative flow
+
+### When to Use This Pattern
+
+Use dual-notebook system when:
+- Analysis generates 5+ figures
+- Comprehensive documentation needed
+- Preparing for publication
+- Multiple collaborators involved
+- Figures will be refined iteratively
+
+Use single notebook when:
+- Quick exploratory analysis
+- Few figures (1-3)
+- Informal documentation sufficient
+- Solo project
+
+### Alternative: Hybrid Approach
+
+For moderately sized analyses, consider:
+- Main code notebook for analysis
+- Separate markdown document for narrative
+- Link figures in markdown: `![Figure 1](figures/fig1.png)`
+- Lighter weight than full presentation notebook
+
+### Creating Presentation Notebooks: Three Approaches
+
+#### Option A: Manual Creation
+**Pros**: Full control, natural narrative flow
+**Cons**: Labor intensive, hard to keep synchronized
+**Best for**: Final publication notebook, one-time documentation
+
+#### Option B: Programmatic Generation
+**Pros**: Automatically synchronized, reusable
+**Cons**: Upfront design effort, less flexible narrative
+**Best for**: Repeated similar analyses, frequently updated figures
+
+#### Option C: Hybrid (Recommended)
+**Pros**: Balance of automation and customization
+**Cons**: Requires planning both parts
+**Best for**: Most scientific analyses
+
+**Hybrid implementation**:
+- Create notebook with placeholders
+- Auto-populate figure displays from metadata
+- Manually write analyses
+- Use includes for methods from code notebook
+
 ## Creating Analysis Notebooks for Scientific Publications
 
 When creating Jupyter notebooks to accompany manuscript figures:
@@ -1453,6 +2892,106 @@ For notebooks > 256 KB:
 - Use `jq` to read specific cells: `cat notebook.ipynb | jq '.cells[10:20]'`
 - Count cells: `cat notebook.ipynb | jq '.cells | length'`
 - Check sections: `cat notebook.ipynb | jq '.cells[75:81] | .[].source[:2]'`
+
+## Managing Large Image Outputs in Notebooks
+
+### Problem: Image Loading Errors
+
+**Symptom**: Notebook displays "Output too large" or fails to load images when opening
+**Cause**: High-DPI figures (300 DPI) combined with large figure sizes generate massive image outputs
+
+### Solution: Optimize Figure DPI and Sizes
+
+**For matplotlib/seaborn notebooks:**
+
+```python
+# In setup cell - set global defaults
+plt.rcParams['figure.dpi'] = 150      # Reduced from 300
+plt.rcParams['savefig.dpi'] = 150     # Reduced from 300
+```
+
+**In individual savefig calls:**
+```python
+# Also reduce figure dimensions
+fig, axes = plt.subplots(2, 3, figsize=(12, 8))  # Was (15, 10)
+# ... plotting code ...
+plt.savefig('output.png', dpi=150, bbox_inches='tight')  # Was dpi=300
+```
+
+**Expected results:**
+- File size reduction: ~75% (combination of DPI and size reduction)
+- Still publication-quality: 150 DPI is sufficient for digital viewing and most journals
+- Notebook remains viewable: Images load without errors
+
+### When to Use Different DPI Settings
+
+- **150 DPI**: Digital viewing, manuscript review, most online journals (recommended default)
+- **300 DPI**: Print publication requirements, final submission only
+- **72-96 DPI**: Presentations, slides, web display only
+
+### Pattern: Update Existing High-DPI Notebooks
+
+If you have a notebook with loading errors:
+
+1. **Identify figure generation cells** (look for `plt.savefig`)
+2. **Update setup cell** with reduced DPI settings
+3. **Update figure sizes** in `plt.subplots(figsize=...)` calls
+4. **Update savefig DPI** parameters
+5. **Re-run cells** to regenerate optimized figures
+
+**Example transformation:**
+```python
+# Before (causes loading errors)
+plt.rcParams['savefig.dpi'] = 300
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+plt.savefig('figure.png', dpi=300, bbox_inches='tight')
+
+# After (loads correctly)
+plt.rcParams['savefig.dpi'] = 150
+fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+plt.savefig('figure.png', dpi=150, bbox_inches='tight')
+```
+
+**Token efficiency note**: Use `jupyter nbconvert --to python` to extract code and identify all figure-generating cells quickly without reading full notebook.
+
+### Updating Color Palettes Across Multiple Cells
+
+**Pattern**: When changing visualization colors throughout a notebook:
+
+1. **Identify palette definition cells** - Usually early in notebook (setup or prep cells)
+2. **Update centralized color dictionary** - Change palette in one location
+3. **Check for hardcoded colors** - Some cells may override the palette
+4. **Update all override locations** - Use NotebookEdit for each cell
+
+**Example: Updating from default to colorblind-safe palette**
+
+```python
+# Cell 1: Main palette definition
+category_colors = {
+    'Cat_A': '#0072B2',    # Blue (Okabe-Ito)
+    'Cat_B': '#E69F00',    # Orange (Okabe-Ito)
+    'Cat_C': '#CC79A7'     # Reddish Purple (Okabe-Ito)
+}
+```
+
+```python
+# Cell 2: Technology-specific palette (may need separate update)
+tech_palette = {
+    'Cat_A+Tech1': '#0072B2',
+    'Cat_A+Tech2': '#56B4E9',
+    'Cat_B+Tech1': '#E69F00',
+    'Cat_C+Tech1': '#CC79A7',
+    'Cat_C+Tech2': '#F0E442'
+}
+```
+
+**Systematic update process**:
+1. Update main `category_colors` dict
+2. Update any `palette` or `tech_palette` dicts
+3. Check for cells with hardcoded `color='#...'` parameters
+4. Re-run affected visualization cells
+
+**Token-efficient approach**: Use `jupyter nbconvert --to python | grep -n "color"` to find all color references before updating.
 
 ## Data Enrichment Pattern
 

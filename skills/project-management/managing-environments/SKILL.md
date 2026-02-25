@@ -162,7 +162,7 @@ CondaToSNonInteractiveError: Terms of Service have not been accepted
 conda install -n curation_paper -c conda-forge jupyterlab -y
 
 # Use pip instead
-/Users/delphine/miniconda3/envs/curation_paper/bin/pip install jupyterlab
+$HOME/miniconda3/envs/curation_paper/bin/pip install jupyterlab
 ```
 
 Packages installed via pip integrate seamlessly with conda environments.
@@ -425,6 +425,9 @@ conda env export --from-history > environment.yml
 
 ### 3. Add Environment to .gitignore
 
+For complete `.gitignore` templates, see the **folder-organization** skill.
+
+Environment-specific entries:
 ```gitignore
 # Python venv
 .venv/

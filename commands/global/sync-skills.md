@@ -16,6 +16,15 @@ ls -la .claude/skills/ 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
 
 # Current commands
 ls -la .claude/commands/ 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
+
+# Check settings
+if [ -L .claude/settings.local.json ]; then
+  echo "Settings: symlinked ✅ -> $(readlink .claude/settings.local.json)"
+elif [ -f .claude/settings.local.json ]; then
+  echo "Settings: local file (not symlinked) ⚠️"
+else
+  echo "Settings: not found"
+fi
 ```
 
 **Detect broken symlinks (CRITICAL - always check this):**
@@ -77,6 +86,10 @@ ls $CLAUDE_METADATA/commands/*/ 2>/dev/null | xargs -n1 basename | sed 's/\.md$/
 
 ## Currently Linked
 
+### Settings ✅
+- settings.local.json (symlinked from $CLAUDE_METADATA)
+  └─ Permissions auto-sync across all projects
+
 ### Essential Global Skills ✅
 Claude Meta:
 - token-efficiency (v1.4.0)
@@ -120,10 +133,26 @@ Collaboration:
   - Recommended for: Galaxy workflow repositories
   - Symlink: `ln -s $CLAUDE_METADATA/skills/galaxy-workflow-development .claude/skills/galaxy-workflow-development`
 
-### New Commands
+### New Global Commands 🆕
+- **generate-manifest** - Generate project manifest
+- **read-manifest** - Read project manifest
+- **update-manifest** - Update project manifest
+
+To symlink all new global commands at once:
+```bash
+# Symlink all missing global commands
+for cmd in $CLAUDE_METADATA/commands/global/*.md; do
+  cmd_name=$(basename "$cmd")
+  if [ ! -e ".claude/commands/$cmd_name" ]; then
+    ln -s "$cmd" ".claude/commands/$cmd_name"
+  fi
+done
+```
+
+### New Project-Specific Commands
 - **galaxy-workflow-development/beautify-export-wkfl** (.md)
   - Beautify and export Galaxy workflows
-  - Symlink: `ln -s $CLAUDE_METADATA/commands/galaxy-workflow-development/beautify-export-wkfl.md .claude/commands/`
+  - Symlink: `ln -s $CLAUDE_METADATA/commands/galaxy-workflow-development/beautify-export-wkfl.md .claude/commands/beautify-export-wkfl.md`
 
 ---
 
@@ -134,6 +163,9 @@ Based on this project's structure, I recommend:
 1. **Essential (if missing):**
    ```bash
    # These should be in EVERY project
+
+   # Global settings (for consistent permissions)
+   ln -s $CLAUDE_METADATA/.claude/settings.local.json .claude/settings.local.json
 
    # Claude Meta
    ln -s $CLAUDE_METADATA/skills/claude-meta/token-efficiency .claude/skills/token-efficiency
@@ -149,8 +181,11 @@ Based on this project's structure, I recommend:
    ln -s $CLAUDE_METADATA/skills/collaboration/hackmd .claude/skills/hackmd
    ln -s $CLAUDE_METADATA/skills/collaboration/project-sharing .claude/skills/project-sharing
 
-   # Global commands
-   ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
+   # Global commands (symlink all at once)
+   for cmd in $CLAUDE_METADATA/commands/global/*.md; do
+     cmd_name=$(basename "$cmd")
+     [ ! -e ".claude/commands/$cmd_name" ] && ln -s "$cmd" ".claude/commands/$cmd_name"
+   done
    ```
 
 2. **Project-Specific (detected from codebase):**
@@ -175,20 +210,53 @@ Based on this project's structure, I recommend:
 
 ### Step 5: Interactive Symlinking
 
-If user approves, execute the symlinks:
+When user requests to symlink skills/commands, execute the appropriate symlinks.
+
+**IMPORTANT: For global commands, automatically detect and symlink ALL new global commands together**
 
 ```bash
 # Create directories if needed
 mkdir -p .claude/skills .claude/commands
 
-# Symlink as requested
-ln -s $CLAUDE_METADATA/skills/skill-name .claude/skills/skill-name
+# Symlink settings if not already linked
+if [ -f "$CLAUDE_METADATA/.claude/settings.local.json" ]; then
+  if [ -f .claude/settings.local.json ] && [ ! -L .claude/settings.local.json ]; then
+    echo "⚠️  Backing up existing settings.local.json to settings.local.json.backup"
+    mv .claude/settings.local.json .claude/settings.local.json.backup
+  fi
+
+  if [ ! -e .claude/settings.local.json ]; then
+    ln -s "$CLAUDE_METADATA/.claude/settings.local.json" .claude/settings.local.json
+    echo "✅ Symlinked global settings.local.json"
+  fi
+fi
+
+# Symlink skills as requested (one at a time or in batch)
+ln -s $CLAUDE_METADATA/skills/category/skill-name .claude/skills/skill-name
+
+# Symlink commands - HANDLE GLOBAL COMMANDS SPECIALLY
+# When user requests "global commands" or "new global commands", symlink ALL missing global commands:
+for cmd in $CLAUDE_METADATA/commands/global/*.md; do
+  cmd_name=$(basename "$cmd")
+  if [ ! -e ".claude/commands/$cmd_name" ]; then
+    ln -s "$cmd" ".claude/commands/$cmd_name"
+    echo "✅ Symlinked global command: $cmd_name"
+  fi
+done
+
+# For project-specific commands, symlink individually as requested
 ln -s $CLAUDE_METADATA/commands/category/command-name.md .claude/commands/
 
 # Verify
 ls -la .claude/skills/
 ls -la .claude/commands/
+ls -la .claude/settings.local.json
 ```
+
+**Special handling for user requests:**
+- "symlink global commands" or "link new global commands" → Symlink ALL missing global commands from `$CLAUDE_METADATA/commands/global/`
+- "symlink galaxy-workflow-development" → Symlink the skill from appropriate directory
+- "symlink all new" → Ask for confirmation, then symlink all missing skills AND commands
 
 ### Step 6: Suggest Git Commit
 
