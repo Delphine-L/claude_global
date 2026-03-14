@@ -105,6 +105,7 @@ When to use quotes in Cheetah:
 - Input parameters and files
 - Expected output files or assertions
 - Test data location and organization
+- See testing.md for detailed testing strategies including large file handling
 
 ## Best Practices
 
@@ -115,7 +116,7 @@ When to use quotes in Cheetah:
 5. **Handle errors gracefully** - Check exit codes, validate inputs
 6. **Use collections** - For multiple related files
 7. **Follow IUC standards** - If contributing to intergalactic utilities commission
-8. **Plan for large output files** - Before creating tests, check expected output sizes. If over 1MB, use assertion-based tests (`has_size`, `has_line`) instead of full file comparison
+8. **Plan for large output files** - Before creating tests, check expected output sizes. If over 1MB, use assertion-based tests (`has_size`, `has_line`) instead of full file comparison (see testing.md)
 
 ## Common Planemo Commands
 
@@ -136,252 +137,52 @@ planemo shed_update --shed_target toolshed
 planemo test --conda_auto_init --conda_auto_install tool.xml
 ```
 
-## Testing Tools
+## Output Routing with Symlinks
 
-### Regenerating Expected Test Outputs
+When a tool writes output to a filename it constructs internally (not `$output`), use
+symlinks in the command block to route the file to Galaxy's output variable.
 
-When test files don't match but the tool runs correctly:
-
-```bash
-# Run the tool manually with test inputs
-mkdir -p output_dir
-/path/to/conda/env/bin/tool_command \
-    -i test-data/input.fa \
-    -o output_dir
-
-# Copy to expected output
-cp output_dir/output.fa test-data/expected_output.fa
-
-# Clean up
-rm -rf output_dir
-```
-
-**Verifying before regenerating:**
-- Check that tool exit code is 0 (successful)
-- Inspect the actual output to ensure it's correct
-- Compare line counts: `wc -l expected.fa actual.fa`
-- Review diffs to understand what changed
-
-**Common reasons to regenerate:**
-- Test was created before tool updates
-- Expected file only has subset of sequences (bug in test creation)
-- Format changes in newer tool versions
-
-### Handling Large Test Files
-
-#### Problem
-GitHub CI has a 1MB file size limit. Large test output files (e.g., pretext maps, large genomic files) will cause CI failures even if they're valid test data.
-
-#### Solution: Use Alternative Assertions
-
-Instead of comparing full output files, use assertions to verify correctness:
-
-**Option 1: Size Assertion (Recommended for binary/large files)**
-```xml
-<test>
-    <param name="input" value="input.bam"/>
-    <output name="output">
-        <assert_contents>
-            <has_size value="2225023" delta="1000"/>
-        </assert_contents>
-    </output>
-</test>
-```
-
-**When to use:**
-- Binary output files (`.pretext`, `.bam`, `.bcf`, etc.)
-- Large text files where full comparison isn't practical
-- Files with consistent size for given inputs
-
-**Best practices:**
-- Calculate size from actual output: `ls -l test-data/output.file | awk '{print $5}'`
-- Use reasonable delta (e.g., 1000 bytes) to account for minor version differences
-- Can combine with checksum for stricter validation
-
-**Option 2: Checksum Assertion**
-```xml
-<test>
-    <param name="input" value="input.bam"/>
-    <output name="output">
-        <assert_contents>
-            <has_size value="2225023" delta="1000"/>
-            <has_text text="specific_header_text"/>
-        </assert_contents>
-    </output>
-</test>
-```
-
-**Note:** Galaxy doesn't have built-in checksum assertions, but you can:
-- Use `has_size` for exact size matching (delta=0)
-- Combine with `has_text` to check for key content markers
-- Use `has_line` to verify specific output lines exist
-
-**Option 3: Content Sampling (For text files)**
-```xml
-<test>
-    <param name="input" value="input.sam"/>
-    <output name="output">
-        <assert_contents>
-            <has_line line="@HD	VN:1.0	SO:coordinate"/>
-            <has_n_columns n="11"/>
-            <has_n_lines n="1000" delta="100"/>
-        </assert_contents>
-    </output>
-</test>
-```
-
-#### Workflow: Replacing Large Test Files
-
-1. **Calculate file size:**
-   ```bash
-   ls -l tools/tool-name/test-data/large_output.file | awk '{print $5}'
-   ```
-
-2. **Update test XML:**
-   Replace `file="large_output.file"` with `<assert_contents>` block
-
-3. **Remove large file from git:**
-   ```bash
-   git rm tools/tool-name/test-data/large_output.file
-   ```
-
-4. **If file was already committed, rebase to remove from history:**
-   ```bash
-   # Squash the commit that added the file with the fix commit
-   git reset --soft HEAD~2
-   git commit -m "new version with test optimization"
-
-   # Force push (only safe if branch hasn't been pulled by others)
-   git push --force-with-lease origin branch-name
-   ```
-
-#### Trade-offs
-
-**Size assertions:**
-- ✅ No large files in repo
-- ✅ Fast CI tests
-- ✅ Works for binary files
-- ❌ Doesn't catch content corruption
-- ❌ May be too lenient for critical outputs
-
-**Full file comparison:**
-- ✅ Detects any output changes
-- ✅ Most thorough validation
-- ❌ Requires storing large files
-- ❌ Fails CI if over 1MB
-
-**Recommendation:** Use size assertions for binary/large files, keep full file comparison for small text outputs where exact correctness matters.
-
-## Common Issues and Solutions
-
-**Issue: "Command not found"**
-- Check `<requirements>` section has correct package
-- Verify conda package name and version
-- Test command availability: `planemo conda_install tool.xml`
-
-**Issue: "Output file not found"**
-- Verify command actually creates the file
-- Check output file path matches `<data name="output" from_work_dir="...">`
-- Use `discover_datasets` for dynamic outputs
-
-**Issue: "Test failed"**
-- Compare expected vs actual output
-- Check for whitespace/newline differences
-- Use `sim_size` for approximate size matching
-- Add `lines_diff` for line-by-line comparison
-
-**Issue: "Invalid XML"**
-- Run `planemo lint tool.xml`
-- Check closing tags match opening tags
-- Validate CDATA sections for command blocks
-- Ensure proper escaping of special characters
-
-## Debugging Tool Test Failures
-
-### General Workflow
-
-1. **Read the test output JSON first**
-   ```bash
-   cat tool_test_output.json
-   ```
-   Look for:
-   - Exit codes and error messages in `stderr`/`stdout`
-   - `output_problems` array for test assertion failures
-   - Actual vs expected output differences
-
-2. **Never copy/modify conda package scripts**
-   - Tool wrappers should ALWAYS use conda packages
-   - If there are bugs in the conda package scripts, work around them in the XML wrapper
-   - Common workaround: Add trailing slashes to paths if script concatenates without separators
-
-3. **Wrong test expectations vs bugs**
-   - If tests fail but the tool runs successfully (exit code 0), check if expected test files are wrong
-   - Regenerate expected outputs by running the tool manually with test inputs
-   - Update `expect_num_outputs` if optional outputs are created
-
-### Common Issues and Fixes
-
-**Path concatenation bugs in Python scripts:**
-```xml
-<!-- If script does: args.output_dir + 'file.txt' without '/' -->
-<!-- Fix in wrapper with trailing slash: -->
--o 'output_dir/'  <!-- instead of -o output_dir -->
-```
-
-**Wrong number of expected outputs:**
-```xml
-<!-- Check if optional outputs are always created -->
-<test expect_num_outputs="3">  <!-- Update count -->
-```
-
-**Output has extra sequences/data:**
-- First check if this is expected behavior
-- Regenerate expected test files from actual tool output
-- Don't add post-processing filters unless absolutely necessary
-
-**Galaxy decompresses tar.gz/tgz files — tool receives plain tar:**
-When a param accepts `format="tar.gz"`, `format="tgz"`, or `format="tar,gz,tgz"`,
-Galaxy may strip the gzip layer before passing the file to the tool. The tool receives
-a plain tar archive, not gzip-compressed. Symptom: `gzip: invalid magic` or
-`tar: invalid magic` when trying `tar -xzf` or `gzip -dc`.
+### Pattern: Symlink before command execution
 
 ```xml
-<!-- BAD: assumes file is still gzip-compressed -->
-tar -xzf '${input_archive}' -C ./output_dir
-gzip -dc '${input_archive}' | tar xf - -C ./output_dir
-
-<!-- GOOD: use plain tar extraction (Galaxy already decompressed) -->
-tar xf '${input_archive}' -C ./output_dir
-
-<!-- For creating tar.gz output (gzip is needed here): -->
-tar cf - -C ./input_dir . | gzip > output.tar.gz
+<command detect_errors="exit_code"><![CDATA[
+    ## Create symlink so tool output lands where Galaxy expects it
+    ln -s '$output_variable' 'expected_tool_output_name' &&
+    tool_command --input '$input' -o 'expected_tool_output_name'
+]]></command>
 ```
 
-**tar flag order bug (`-xfz` vs `-xzf`):**
-`tar -xfz file.tar.gz` means "extract, file=z, then file.tar.gz is a positional arg".
-The `-f` flag consumes the next character as the filename. Error: `tar: can't open 'z'`.
-Fix: always put `-f` last (`tar -xzf`) or use positional syntax (`tar xf file`).
+### Pattern: Prefix-based output naming
 
-**Test conditional nesting must match input structure:**
-If a conditional is expanded via macro inside `mode_conditional`, test params must nest it:
+Some tools use `--out-prefix` where the output filename is `prefix + input_filename`.
+The tool constructs the filename internally, so you must predict it and symlink:
+
 ```xml
-<!-- BAD: blobtk_plot_options outside mode_conditional -->
-<conditional name="mode_conditional">
-    <param name="selector" value="filter"/>
-</conditional>
-<conditional name="blobtk_plot_options">
-    <param name="blobtk_plot" value="no"/>
-</conditional>
-
-<!-- GOOD: nested inside mode_conditional -->
-<conditional name="mode_conditional">
-    <param name="selector" value="filter"/>
-    <conditional name="blobtk_plot_options">
-        <param name="blobtk_plot" value="no"/>
-    </conditional>
-</conditional>
+<command><![CDATA[
+    #set $mangled_input = re.sub(r"[^\w\-\s]", "_", str($input.element_identifier)) + "." + str($input.ext)
+    ln -s '$input' '$mangled_input' &&
+    ln -s '$output_var' 'myprefix${mangled_input}' &&
+    tool_command --input-reads '$mangled_input' -p myprefix
+]]></command>
 ```
-Planemo lint reports: `WARNING (TestsCaseValidation): Invalid parameter name found`.
+
+**Key points:**
+- Symlink is created *before* running the tool -- the tool writes through it
+- Must match the exact filename the tool will produce
+- For prefix mode: output = `prefix + getFileName(input)`, so mangle the input name to match
+
+### Using `format_source` for dynamic output formats
+
+When output format should match the input format (e.g., subsampled reads):
+
+```xml
+<data name="subsampled_outfile" format_source="input_reads" label="Subsampled reads">
+    <filter>output_options["output_type"]["type_selector"] == "subsampled_reads"</filter>
+</data>
+```
+
+This is preferable to `change_format` when the output is always the same format as input.
+Use `change_format` when the user explicitly selects the output format.
 
 ## XML Template Example
 
@@ -448,11 +249,18 @@ This skill includes detailed reference documentation:
   - Complete XML structure reference
   - Advanced features and patterns
 
+- **testing.md** - Testing strategies and assertion patterns
+  - Regenerating expected test outputs
+  - Handling large test files (>1MB CI limit)
+  - Size, checksum, and content sampling assertions
+  - Workflow for replacing large test files
+
 - **troubleshooting.md** - Practical troubleshooting guide
   - Reading tool_test_output.json
   - Common exit codes and their meanings
-  - Solutions for frequent issues
-  - Test failure diagnosis
+  - Common XML and runtime issues
+  - Debugging tool test failures
+  - Test failure diagnosis and fixes
 
 - **dependency-debugging.md** - Dependency conflict resolution
   - Using `planemo mull` for diagnosis

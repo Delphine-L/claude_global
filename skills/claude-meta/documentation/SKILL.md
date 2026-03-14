@@ -1,3 +1,9 @@
+---
+name: documentation
+description: Best practices for session documentation - incremental summaries, fix reports, and audit trails
+allowed-tools: Read, Grep, Glob, Bash
+---
+
 # Documentation Skills
 
 Best practices for creating effective documentation during Claude Code sessions.

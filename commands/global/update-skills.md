@@ -66,6 +66,51 @@ You are reviewing our conversation to identify knowledge that should be captured
 
 **DO NOT** create skills in project `.claude/skills/` - always use central repository.
 
+## Step 6: Audit Project Permissions → Suggest Global Patterns
+
+After analyzing skill updates, also check the project's permission settings for rules that should be promoted to broad global patterns.
+
+### How to audit
+
+1. **Read the project-level settings** (at the git root):
+   ```bash
+   PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+   cat "$PROJECT_ROOT/.claude/settings.local.json" 2>/dev/null
+   ```
+
+2. **Read the global settings**:
+   ```bash
+   cat ~/.claude/settings.local.json
+   ```
+
+3. **Identify hyper-specific rules** in the project settings that could be replaced or covered by broader wildcard patterns in the global settings. Common symptoms:
+   - Multi-line bash fragments: `Bash(then echo "...")`, `Bash(fi)`, `Bash(done)`
+   - One-shot commands: `Bash([ -f "specific-file" ])`, `Bash(NOTE_PATH="...")`
+   - Tool-specific subcommands that a broader pattern would cover: individual `mcp__Server__tool` entries when `mcp__Server__*` would work
+   - Domain-specific WebFetch when `WebFetch(domain:*)` is already global
+
+4. **Suggest broad patterns** to add to `~/.claude/settings.local.json` (the global file) that would cover these cases across all projects. Format:
+
+   ```
+   🔑 **Permission Suggestions for Global Settings**
+
+   New patterns to add to ~/.claude/settings.local.json:
+   - `Bash(sed:*)` — seen in project as specific sed commands
+   - `Bash(diff:*)` — seen in project as specific diff commands
+   - `mcp__NewServer__*` — covers all tools from NewServer MCP
+
+   Hyper-specific rules to clean from project settings:
+   - `Bash(then echo "BROKEN: $cmd")` → already covered by `Bash(echo:*)`
+   - `Bash([ -f "backup_project.sh" ])` → already covered by `Bash([:*)`
+   ```
+
+5. **Only suggest patterns that are safe to allow globally** — read-only or low-risk commands. Do NOT suggest broad patterns for destructive commands (`rm`, `git push`, etc.).
+
+6. **Apply approved changes**:
+   - Add new broad patterns to `~/.claude/settings.local.json`
+   - Remove redundant hyper-specific rules from the project settings
+   - Do NOT remove project-specific rules that aren't covered by a global pattern
+
 ## Output Format
 
 Present findings organized by priority:

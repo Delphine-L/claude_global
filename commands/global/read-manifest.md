@@ -1,6 +1,10 @@
-# Read MANIFEST Command
+---
+name: read-manifest
+description: Smart session startup - read MANIFEST, identify main documents, load relevant context for current work
+allowed-tools: Read, Grep, Glob, Bash
+---
 
-Smart session startup: Read root MANIFEST, identify main documents, and load relevant context based on user's work focus.
+# Read MANIFEST Command
 
 ## Instructions
 

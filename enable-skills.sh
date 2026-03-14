@@ -1,5 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Enable global Claude Code skills and commands in the current directory
+# NOTE: Must be run with bash, not sh (uses bash arrays)
 
 set -e  # Exit on error
 
@@ -17,16 +18,21 @@ TARGET_SKILLS_DIR=".claude/skills"
 TARGET_COMMANDS_DIR=".claude/commands"
 
 # Essential skills that should always be included
+# All claude-meta/* skills are auto-included (defines how user interacts with Claude)
 ESSENTIAL_SKILLS=(
-    "claude-meta/token-efficiency"
-    "claude-meta/collaboration"
     "project-management/folder-organization"
     "project-management/managing-environments"
     "project-management/obsidian"
     "project-management/data-backup"
-    "collaboration/hackmd"
-    "collaboration/project-sharing"
 )
+
+# Auto-add all claude-meta skills
+for skill in "$GLOBAL_SKILLS_DIR"/claude-meta/*/; do
+    if [ -d "$skill" ]; then
+        skill_name="claude-meta/$(basename "$skill")"
+        ESSENTIAL_SKILLS+=("$skill_name")
+    fi
+done
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -38,7 +44,7 @@ NC='\033[0m' # No Color
 # Function to set up Obsidian integration
 setup_obsidian() {
     echo ""
-    echo -e "${BLUE}Obsidian Integration Setup${NC}"
+    printf "${BLUE}Obsidian Integration Setup${NC}\n"
     echo ""
     echo "Would you like to set up an Obsidian folder for this project?"
     echo "This will store session notes, decisions, and project documentation."
@@ -49,7 +55,7 @@ setup_obsidian() {
     if [[ "$obsidian_choice" =~ ^[Yy]$ ]]; then
         # Check if OBSIDIAN_VAULT is set
         if [ -z "$OBSIDIAN_VAULT" ]; then
-            echo -e "${YELLOW}⚠  OBSIDIAN_VAULT environment variable not set${NC}"
+            printf "${YELLOW}⚠  OBSIDIAN_VAULT environment variable not set${NC}\n"
             echo "Please set OBSIDIAN_VAULT to your Obsidian vault path in your shell config"
             echo "Example: export OBSIDIAN_VAULT=\"\$HOME/Documents/ObsidianVault\""
             echo ""
@@ -115,7 +121,7 @@ obsidian_path=$OBSIDIAN_PATH
 EOF
 
             echo ""
-            echo -e "${GREEN}✓ Obsidian configuration saved${NC}"
+            printf "${GREEN}✓ Obsidian configuration saved${NC}\n"
             echo "  Project name: $PROJECT_NAME"
             echo "  Vault path: $OBSIDIAN_PATH"
             echo "  Notes will be saved to: \$OBSIDIAN_VAULT/$OBSIDIAN_PATH/"
@@ -132,7 +138,7 @@ echo ""
 
 # Check if we're in a valid directory
 if [ "$PWD" = "$CLAUDE_METADATA" ]; then
-    echo -e "${YELLOW}⚠  You're already in the global skills directory!${NC}"
+    printf "${YELLOW}⚠  You're already in the global skills directory!${NC}\n"
     echo "   Skills are automatically available here."
     echo ""
     echo "   To use in another project, run this script from that directory:"
@@ -143,14 +149,14 @@ fi
 
 # Check if global skills directory exists
 if [ ! -d "$GLOBAL_SKILLS_DIR" ]; then
-    echo -e "${RED}✗ Global skills directory not found!${NC}"
+    printf "${RED}✗ Global skills directory not found!${NC}\n"
     echo "   Expected: $GLOBAL_SKILLS_DIR"
     exit 1
 fi
 
 # Check if global commands directory exists
 if [ ! -d "$GLOBAL_COMMANDS_DIR" ]; then
-    echo -e "${YELLOW}⚠  Global commands directory not found: $GLOBAL_COMMANDS_DIR${NC}"
+    printf "${YELLOW}⚠  Global commands directory not found: $GLOBAL_COMMANDS_DIR${NC}\n"
     echo "   Continuing with skills only..."
     COMMANDS_AVAILABLE=false
 else
@@ -165,7 +171,7 @@ fi
 echo ""
 
 # Detect project type
-echo -e "${BLUE}Project Type Detection${NC}"
+printf "${BLUE}Project Type Detection${NC}\n"
 echo ""
 echo "What type of project is this?"
 echo "  1) Analysis/Research (Jupyter notebooks, data analysis)"
@@ -181,13 +187,21 @@ SUGGESTED_SKILLS=()
 case $project_type in
     1)
         echo ""
-        echo -e "${YELLOW}Analysis/Research project detected${NC}"
+        printf "${YELLOW}Analysis/Research project detected${NC}\n"
         echo "Suggested additional skills:"
         echo "  - analysis/jupyter-notebook (notebook best practices)"
         echo "  - analysis/data-analysis-patterns (data handling patterns)"
         echo "  - analysis/data-visualization (publication figures)"
         echo "  - analysis/scientific-publication (figure refinement)"
         echo "  - analysis/documentation-organization (organize project docs)"
+        echo "  - collaboration/hackmd (slides & collaborative docs)"
+        echo "  - collaboration/project-sharing (sharing archives)"
+        echo "  - bioinformatics/fundamentals (SAM/BAM, AGP, sequencing)"
+        echo "  - bioinformatics/phylogenetics (phylogenetic analysis)"
+        echo "  - bioinformatics/visualization (genomic visualizations)"
+        echo "  - databases/gnomad (gnomAD variant frequencies & constraint)"
+        echo "  - databases/gget (20+ database CLI/Python queries)"
+        echo "  - databases/bioservices (40+ service unified Python API)"
         echo ""
         SUGGESTED_SKILLS=(
             "analysis/jupyter-notebook"
@@ -195,11 +209,19 @@ case $project_type in
             "analysis/data-visualization"
             "analysis/scientific-publication"
             "analysis/documentation-organization"
+            "collaboration/hackmd"
+            "collaboration/project-sharing"
+            "bioinformatics/fundamentals"
+            "bioinformatics/phylogenetics"
+            "bioinformatics/visualization"
+            "databases/gnomad"
+            "databases/gget"
+            "databases/bioservices"
         )
         ;;
     2)
         echo ""
-        echo -e "${YELLOW}Development project detected${NC}"
+        printf "${YELLOW}Development project detected${NC}\n"
         echo "Suggested additional skills:"
         echo "  - packaging/conda-recipe (if building conda packages)"
         echo ""
@@ -209,27 +231,41 @@ case $project_type in
         ;;
     3)
         echo ""
-        echo -e "${YELLOW}Bioinformatics project detected${NC}"
+        printf "${YELLOW}Bioinformatics project detected${NC}\n"
         echo "Suggested additional skills:"
-        echo "  - bioinformatics/fundamentals (SAM/BAM, AGP, sequencing)"
-        echo "  - bioinformatics/vgp-pipeline (VGP genome assembly)"
         echo "  - galaxy/tool-wrapping (Galaxy tool development)"
         echo "  - galaxy/workflow-development (Galaxy workflows)"
         echo "  - galaxy/automation (BioBlend, Planemo)"
+        echo "  - galaxy/training-material (GTN training materials)"
         echo ""
         SUGGESTED_SKILLS=(
-            "bioinformatics/fundamentals"
             "galaxy/tool-wrapping"
             "galaxy/workflow-development"
             "galaxy/automation"
+            "galaxy/training-material"
         )
         ;;
     4)
         echo ""
-        echo -e "${YELLOW}You'll be able to choose specific skills in the next step${NC}"
+        printf "${YELLOW}You'll be able to choose specific skills in the next step${NC}\n"
         echo ""
         ;;
 esac
+
+# Handle broken .claude symlink (e.g., from old setup pointing to moved repo)
+if [ -L ".claude" ] && [ ! -e ".claude" ]; then
+    OLD_TARGET=$(readlink ".claude")
+    printf "${YELLOW}⚠  Found broken .claude symlink -> $OLD_TARGET${NC}\n"
+    echo "   Removing broken symlink to create fresh .claude directory..."
+    rm ".claude"
+fi
+
+# Handle .claude being a file instead of a directory
+if [ -e ".claude" ] && [ ! -d ".claude" ]; then
+    printf "${RED}✗ .claude exists but is not a directory!${NC}\n"
+    echo "   Please remove or rename it manually, then re-run this script."
+    exit 1
+fi
 
 # Create directories if they don't exist
 mkdir -p "$TARGET_SKILLS_DIR"
@@ -238,7 +274,7 @@ if [ "$COMMANDS_AVAILABLE" = true ]; then
 fi
 
 # Show available skills
-echo -e "${BLUE}Available skills in \$CLAUDE_METADATA:${NC}"
+printf "${BLUE}Available skills in \$CLAUDE_METADATA:${NC}\n"
 AVAILABLE_SKILLS=()
 for category in "$GLOBAL_SKILLS_DIR"/*; do
     if [ -d "$category" ]; then
@@ -259,7 +295,7 @@ for category in "$GLOBAL_SKILLS_DIR"/*; do
                 is_essential=false
                 for essential in "${ESSENTIAL_SKILLS[@]}"; do
                     if [ "$skill_name" = "$essential" ]; then
-                        echo -e "  ${GREEN}✓${NC} $skill_name ${YELLOW}(essential)${NC}"
+                        printf "  ${GREEN}✓${NC} $skill_name ${YELLOW}(essential)${NC}\n"
                         is_essential=true
                         break
                     fi
@@ -276,7 +312,7 @@ echo ""
 
 # Show available commands
 if [ "$COMMANDS_AVAILABLE" = true ]; then
-    echo -e "${BLUE}Global commands available:${NC}"
+    printf "${BLUE}Global commands available:${NC}\n"
     COMMAND_COUNT=0
     for cmd in "$GLOBAL_COMMANDS_DIR"/*.md; do
         if [ -f "$cmd" ]; then
@@ -300,7 +336,7 @@ read -p "Enter choice [1-4]: " choice
 case $choice in
     1)
         echo ""
-        echo -e "${BLUE}Setting up essential skills...${NC}"
+        printf "${BLUE}Setting up essential skills...${NC}\n"
 
         # Symlink essential skills
         for skill_path in "${ESSENTIAL_SKILLS[@]}"; do
@@ -309,25 +345,25 @@ case $choice in
             source_skill="$GLOBAL_SKILLS_DIR/$skill_path"
 
             if [ ! -d "$source_skill" ]; then
-                echo -e "${YELLOW}  ⚠ Essential skill not found: $skill_path (skipping)${NC}"
+                printf "${YELLOW}  ⚠ Essential skill not found: $skill_path (skipping)${NC}\n"
                 continue
             fi
 
             if [ -L "$target_link" ]; then
                 echo "  Already linked: $skill_name"
             elif [ -d "$target_link" ]; then
-                echo -e "${RED}  ✗ Directory exists (not a symlink): $skill_name${NC}"
+                printf "${RED}  ✗ Directory exists (not a symlink): $skill_name${NC}\n"
                 echo "    Remove it manually or it won't auto-update!"
             else
                 ln -s "$source_skill" "$target_link"
-                echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
             fi
         done
 
         # Symlink global commands
         if [ "$COMMANDS_AVAILABLE" = true ]; then
             echo ""
-            echo -e "${BLUE}Setting up global commands...${NC}"
+            printf "${BLUE}Setting up global commands...${NC}\n"
             for cmd in "$GLOBAL_COMMANDS_DIR"/*.md; do
                 if [ -f "$cmd" ]; then
                     cmd_name=$(basename "$cmd")
@@ -336,10 +372,10 @@ case $choice in
                     if [ -L "$target_link" ]; then
                         echo "  Already linked: $cmd_name"
                     elif [ -f "$target_link" ]; then
-                        echo -e "${RED}  ✗ File exists (not a symlink): $cmd_name${NC}"
+                        printf "${RED}  ✗ File exists (not a symlink): $cmd_name${NC}\n"
                     else
                         ln -s "$cmd" "$target_link"
-                        echo -e "${GREEN}  ✓ Linked: /$cmd_name${NC}"
+                        printf "${GREEN}  ✓ Linked: /$cmd_name${NC}\n"
                     fi
                 fi
             done
@@ -347,26 +383,26 @@ case $choice in
 
         # Symlink global settings
         echo ""
-        echo -e "${BLUE}Setting up global settings...${NC}"
+        printf "${BLUE}Setting up global settings...${NC}\n"
         GLOBAL_SETTINGS="$CLAUDE_METADATA/.claude/settings.local.json"
         TARGET_SETTINGS=".claude/settings.local.json"
 
         if [ -f "$GLOBAL_SETTINGS" ]; then
             if [ -f "$TARGET_SETTINGS" ] && [ ! -L "$TARGET_SETTINGS" ]; then
-                echo -e "${YELLOW}  ⚠ Backing up existing settings.local.json${NC}"
+                printf "${YELLOW}  ⚠ Backing up existing settings.local.json${NC}\n"
                 mv "$TARGET_SETTINGS" "$TARGET_SETTINGS.backup"
             fi
 
             if [ -L "$TARGET_SETTINGS" ]; then
                 echo "  Already linked: settings.local.json"
             elif [ -f "$TARGET_SETTINGS" ]; then
-                echo -e "${RED}  ✗ File exists (not a symlink): settings.local.json${NC}"
+                printf "${RED}  ✗ File exists (not a symlink): settings.local.json${NC}\n"
             else
                 ln -s "$GLOBAL_SETTINGS" "$TARGET_SETTINGS"
-                echo -e "${GREEN}  ✓ Linked: settings.local.json (permissions will sync)${NC}"
+                printf "${GREEN}  ✓ Linked: settings.local.json (permissions will sync)${NC}\n"
             fi
         else
-            echo -e "${YELLOW}  ⚠ Global settings not found (skipping)${NC}"
+            printf "${YELLOW}  ⚠ Global settings not found (skipping)${NC}\n"
         fi
 
         # Set up Obsidian integration
@@ -380,24 +416,24 @@ case $choice in
 
             if [[ "$link_suggested" =~ ^[Yy]$ ]]; then
                 echo ""
-                echo -e "${BLUE}Linking suggested skills...${NC}"
+                printf "${BLUE}Linking suggested skills...${NC}\n"
                 for skill_path in "${SUGGESTED_SKILLS[@]}"; do
                     skill_name=$(basename "$skill_path")
                     target_link="$TARGET_SKILLS_DIR/$skill_name"
                     source_skill="$GLOBAL_SKILLS_DIR/$skill_path"
 
                     if [ ! -d "$source_skill" ]; then
-                        echo -e "${YELLOW}  ⚠ Suggested skill not found: $skill_path (skipping)${NC}"
+                        printf "${YELLOW}  ⚠ Suggested skill not found: $skill_path (skipping)${NC}\n"
                         continue
                     fi
 
                     if [ -L "$target_link" ]; then
                         echo "  Already linked: $skill_name"
                     elif [ -d "$target_link" ]; then
-                        echo -e "${RED}  ✗ Directory exists: $skill_name${NC}"
+                        printf "${RED}  ✗ Directory exists: $skill_name${NC}\n"
                     else
                         ln -s "$source_skill" "$target_link"
-                        echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                        printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
                     fi
                 done
             fi
@@ -405,7 +441,7 @@ case $choice in
 
         # Ask about additional skills
         echo ""
-        echo -e "${BLUE}Additional skills available:${NC}"
+        printf "${BLUE}Additional skills available:${NC}\n"
         ADDITIONAL_SKILLS=()
         for skill_name in "${AVAILABLE_SKILLS[@]}"; do
             is_essential=false
@@ -449,10 +485,10 @@ case $choice in
                         if [ -L "$target_link" ]; then
                             echo "  Already linked: $skill_name"
                         elif [ -d "$target_link" ]; then
-                            echo -e "${RED}  ✗ Directory exists: $skill_name${NC}"
+                            printf "${RED}  ✗ Directory exists: $skill_name${NC}\n"
                         else
                             ln -s "$source_skill" "$target_link"
-                            echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                            printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
                         fi
                     done
                 else
@@ -473,7 +509,7 @@ case $choice in
                             done
 
                             if [ -z "$skill_path" ]; then
-                                echo -e "${RED}  ✗ Skill not found: $skill_name${NC}"
+                                printf "${RED}  ✗ Skill not found: $skill_name${NC}\n"
                                 continue
                             fi
                         fi
@@ -482,17 +518,17 @@ case $choice in
                         source_skill="$GLOBAL_SKILLS_DIR/$skill_path"
 
                         if [ ! -d "$source_skill" ]; then
-                            echo -e "${RED}  ✗ Skill not found: $skill_path${NC}"
+                            printf "${RED}  ✗ Skill not found: $skill_path${NC}\n"
                             continue
                         fi
 
                         if [ -L "$target_link" ]; then
                             echo "  Already linked: $skill_name"
                         elif [ -d "$target_link" ]; then
-                            echo -e "${RED}  ✗ Directory exists: $skill_name${NC}"
+                            printf "${RED}  ✗ Directory exists: $skill_name${NC}\n"
                         else
                             ln -s "$source_skill" "$target_link"
-                            echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                            printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
                         fi
                     done
                 fi
@@ -502,7 +538,7 @@ case $choice in
 
     2)
         echo ""
-        echo -e "${BLUE}Setting up essential skills...${NC}"
+        printf "${BLUE}Setting up essential skills...${NC}\n"
 
         # Symlink essential skills
         for skill_path in "${ESSENTIAL_SKILLS[@]}"; do
@@ -511,24 +547,24 @@ case $choice in
             source_skill="$GLOBAL_SKILLS_DIR/$skill_path"
 
             if [ ! -d "$source_skill" ]; then
-                echo -e "${YELLOW}  ⚠ Essential skill not found: $skill_path (skipping)${NC}"
+                printf "${YELLOW}  ⚠ Essential skill not found: $skill_path (skipping)${NC}\n"
                 continue
             fi
 
             if [ -L "$target_link" ]; then
                 echo "  Already linked: $skill_name"
             elif [ -d "$target_link" ]; then
-                echo -e "${RED}  ✗ Directory exists (not a symlink): $skill_name${NC}"
+                printf "${RED}  ✗ Directory exists (not a symlink): $skill_name${NC}\n"
             else
                 ln -s "$source_skill" "$target_link"
-                echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
             fi
         done
 
         # Symlink global commands
         if [ "$COMMANDS_AVAILABLE" = true ]; then
             echo ""
-            echo -e "${BLUE}Setting up global commands...${NC}"
+            printf "${BLUE}Setting up global commands...${NC}\n"
             for cmd in "$GLOBAL_COMMANDS_DIR"/*.md; do
                 if [ -f "$cmd" ]; then
                     cmd_name=$(basename "$cmd")
@@ -537,10 +573,10 @@ case $choice in
                     if [ -L "$target_link" ]; then
                         echo "  Already linked: $cmd_name"
                     elif [ -f "$target_link" ]; then
-                        echo -e "${RED}  ✗ File exists (not a symlink): $cmd_name${NC}"
+                        printf "${RED}  ✗ File exists (not a symlink): $cmd_name${NC}\n"
                     else
                         ln -s "$cmd" "$target_link"
-                        echo -e "${GREEN}  ✓ Linked: /$cmd_name${NC}"
+                        printf "${GREEN}  ✓ Linked: /$cmd_name${NC}\n"
                     fi
                 fi
             done
@@ -548,26 +584,26 @@ case $choice in
 
         # Symlink global settings
         echo ""
-        echo -e "${BLUE}Setting up global settings...${NC}"
+        printf "${BLUE}Setting up global settings...${NC}\n"
         GLOBAL_SETTINGS="$CLAUDE_METADATA/.claude/settings.local.json"
         TARGET_SETTINGS=".claude/settings.local.json"
 
         if [ -f "$GLOBAL_SETTINGS" ]; then
             if [ -f "$TARGET_SETTINGS" ] && [ ! -L "$TARGET_SETTINGS" ]; then
-                echo -e "${YELLOW}  ⚠ Backing up existing settings.local.json${NC}"
+                printf "${YELLOW}  ⚠ Backing up existing settings.local.json${NC}\n"
                 mv "$TARGET_SETTINGS" "$TARGET_SETTINGS.backup"
             fi
 
             if [ -L "$TARGET_SETTINGS" ]; then
                 echo "  Already linked: settings.local.json"
             elif [ -f "$TARGET_SETTINGS" ]; then
-                echo -e "${RED}  ✗ File exists (not a symlink): settings.local.json${NC}"
+                printf "${RED}  ✗ File exists (not a symlink): settings.local.json${NC}\n"
             else
                 ln -s "$GLOBAL_SETTINGS" "$TARGET_SETTINGS"
-                echo -e "${GREEN}  ✓ Linked: settings.local.json (permissions will sync)${NC}"
+                printf "${GREEN}  ✓ Linked: settings.local.json (permissions will sync)${NC}\n"
             fi
         else
-            echo -e "${YELLOW}  ⚠ Global settings not found (skipping)${NC}"
+            printf "${YELLOW}  ⚠ Global settings not found (skipping)${NC}\n"
         fi
 
         # Set up Obsidian integration
@@ -580,7 +616,7 @@ case $choice in
         read -p "> " selected_skills
 
         echo ""
-        echo -e "${BLUE}Setting up selected skills...${NC}"
+        printf "${BLUE}Setting up selected skills...${NC}\n"
 
         if [ "$selected_skills" = "all" ]; then
             for skill_path in "${AVAILABLE_SKILLS[@]}"; do
@@ -591,10 +627,10 @@ case $choice in
                 if [ -L "$target_link" ]; then
                     echo "  Already linked: $skill_name"
                 elif [ -d "$target_link" ]; then
-                    echo -e "${RED}  ✗ Directory exists: $skill_name${NC}"
+                    printf "${RED}  ✗ Directory exists: $skill_name${NC}\n"
                 else
                     ln -s "$source_skill" "$target_link"
-                    echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                    printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
                 fi
             done
         else
@@ -615,7 +651,7 @@ case $choice in
                     done
 
                     if [ -z "$skill_path" ]; then
-                        echo -e "${RED}  ✗ Skill not found: $skill_name${NC}"
+                        printf "${RED}  ✗ Skill not found: $skill_name${NC}\n"
                         continue
                     fi
                 fi
@@ -624,17 +660,17 @@ case $choice in
                 source_skill="$GLOBAL_SKILLS_DIR/$skill_path"
 
                 if [ ! -d "$source_skill" ]; then
-                    echo -e "${RED}  ✗ Skill not found: $skill_path${NC}"
+                    printf "${RED}  ✗ Skill not found: $skill_path${NC}\n"
                     continue
                 fi
 
                 if [ -L "$target_link" ]; then
                     echo "  Already linked: $skill_name"
                 elif [ -d "$target_link" ]; then
-                    echo -e "${RED}  ✗ Directory exists: $skill_name${NC}"
+                    printf "${RED}  ✗ Directory exists: $skill_name${NC}\n"
                 else
                     ln -s "$source_skill" "$target_link"
-                    echo -e "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}"
+                    printf "${GREEN}  ✓ Linked: $skill_name (from $skill_path)${NC}\n"
                 fi
             done
         fi
@@ -642,7 +678,7 @@ case $choice in
         # Symlink global commands
         if [ "$COMMANDS_AVAILABLE" = true ]; then
             echo ""
-            echo -e "${BLUE}Setting up global commands...${NC}"
+            printf "${BLUE}Setting up global commands...${NC}\n"
             for cmd in "$GLOBAL_COMMANDS_DIR"/*.md; do
                 if [ -f "$cmd" ]; then
                     cmd_name=$(basename "$cmd")
@@ -651,10 +687,10 @@ case $choice in
                     if [ -L "$target_link" ]; then
                         echo "  Already linked: $cmd_name"
                     elif [ -f "$target_link" ]; then
-                        echo -e "${RED}  ✗ File exists (not a symlink): $cmd_name${NC}"
+                        printf "${RED}  ✗ File exists (not a symlink): $cmd_name${NC}\n"
                     else
                         ln -s "$cmd" "$target_link"
-                        echo -e "${GREEN}  ✓ Linked: /$cmd_name${NC}"
+                        printf "${GREEN}  ✓ Linked: /$cmd_name${NC}\n"
                     fi
                 fi
             done
@@ -662,26 +698,26 @@ case $choice in
 
         # Symlink global settings
         echo ""
-        echo -e "${BLUE}Setting up global settings...${NC}"
+        printf "${BLUE}Setting up global settings...${NC}\n"
         GLOBAL_SETTINGS="$CLAUDE_METADATA/.claude/settings.local.json"
         TARGET_SETTINGS=".claude/settings.local.json"
 
         if [ -f "$GLOBAL_SETTINGS" ]; then
             if [ -f "$TARGET_SETTINGS" ] && [ ! -L "$TARGET_SETTINGS" ]; then
-                echo -e "${YELLOW}  ⚠ Backing up existing settings.local.json${NC}"
+                printf "${YELLOW}  ⚠ Backing up existing settings.local.json${NC}\n"
                 mv "$TARGET_SETTINGS" "$TARGET_SETTINGS.backup"
             fi
 
             if [ -L "$TARGET_SETTINGS" ]; then
                 echo "  Already linked: settings.local.json"
             elif [ -f "$TARGET_SETTINGS" ]; then
-                echo -e "${RED}  ✗ File exists (not a symlink): settings.local.json${NC}"
+                printf "${RED}  ✗ File exists (not a symlink): settings.local.json${NC}\n"
             else
                 ln -s "$GLOBAL_SETTINGS" "$TARGET_SETTINGS"
-                echo -e "${GREEN}  ✓ Linked: settings.local.json (permissions will sync)${NC}"
+                printf "${GREEN}  ✓ Linked: settings.local.json (permissions will sync)${NC}\n"
             fi
         else
-            echo -e "${YELLOW}  ⚠ Global settings not found (skipping)${NC}"
+            printf "${YELLOW}  ⚠ Global settings not found (skipping)${NC}\n"
         fi
 
         # Set up Obsidian integration
@@ -696,7 +732,7 @@ case $choice in
 
     *)
         echo ""
-        echo -e "${RED}Invalid choice. Cancelled.${NC}"
+        printf "${RED}Invalid choice. Cancelled.${NC}\n"
         exit 1
         ;;
 esac
@@ -709,11 +745,11 @@ echo ""
 
 # Show what was set up
 LINKED_SKILLS=$(find "$TARGET_SKILLS_DIR" -maxdepth 1 -type l 2>/dev/null | wc -l | xargs)
-echo -e "Skills linked: ${GREEN}$LINKED_SKILLS${NC}"
+printf "Skills linked: ${GREEN}$LINKED_SKILLS${NC}\n"
 
 if [ "$COMMANDS_AVAILABLE" = true ]; then
     LINKED_COMMANDS=$(find "$TARGET_COMMANDS_DIR" -maxdepth 1 -type l -name "*.md" 2>/dev/null | wc -l | xargs)
-    echo -e "Commands linked: ${GREEN}$LINKED_COMMANDS${NC}"
+    printf "Commands linked: ${GREEN}$LINKED_COMMANDS${NC}\n"
     echo ""
     echo "Available commands:"
     for cmd in "$TARGET_COMMANDS_DIR"/*.md; do
@@ -730,7 +766,7 @@ echo ""
 
 # Check if project-config exists
 if [ -f ".claude/project-config" ]; then
-    echo -e "${GREEN}Obsidian integration configured${NC}"
+    printf "${GREEN}Obsidian integration configured${NC}\n"
     if [ -f ".claude/project-config" ]; then
         PROJECT_NAME=$(grep "^obsidian_project=" .claude/project-config | cut -d= -f2)
         OBSIDIAN_PATH=$(grep "^obsidian_path=" .claude/project-config | cut -d= -f2)
@@ -740,26 +776,26 @@ if [ -f ".claude/project-config" ]; then
     echo ""
 fi
 
-echo -e "${BLUE}Next steps:${NC}"
+printf "${BLUE}Next steps:${NC}\n"
 echo "  1. Open Claude Code in this directory"
 echo "  2. Start working on your project"
 echo "  3. End sessions with /safe-exit (saves notes + optional backup)"
 echo ""
-echo -e "${BLUE}Essential commands:${NC}"
+printf "${BLUE}Essential commands:${NC}\n"
 echo "  • /command-help - Show help for any command"
 echo "  • /safe-exit - End session with notes & backup"
 echo "  • /safe-clear - Clear context while preserving knowledge"
 echo "  • /consolidate-notes - Weekly consolidation with AI analysis"
 echo "  • /backup - Create project backups"
 echo ""
-echo -e "${BLUE}Other useful commands:${NC}"
+printf "${BLUE}Other useful commands:${NC}\n"
 echo "  • /list-skills - See all available skills"
 echo "  • /sync-skills - Sync with global metadata"
 echo "  • /share-project - Prepare packages for sharing"
 
 if [ -f ".claude/project-config" ]; then
     echo ""
-    echo -e "${YELLOW}Git configuration:${NC}"
+    printf "${YELLOW}Git configuration:${NC}\n"
     if git rev-parse --git-dir > /dev/null 2>&1; then
         echo "  Add .claude/ to .gitignore (symlinks shouldn't be committed)"
         echo "  But DO commit .claude/project-config (project-specific settings)"
@@ -773,7 +809,7 @@ if [ -f ".claude/project-config" ]; then
 fi
 
 echo ""
-echo -e "${YELLOW}Remember:${NC} All skills are symlinked from \$CLAUDE_METADATA"
+printf "${YELLOW}Remember:${NC} All skills are symlinked from \$CLAUDE_METADATA"
 echo "  - They auto-update when global skills are updated"
 echo "  - Never create local skill files (always use symlinks)"
 echo ""

@@ -1,6 +1,7 @@
 ---
 name: command-help
 description: Show help and documentation for Claude Code commands. Usage: /command-help [command-name]
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 Display documentation and usage information for Claude Code slash commands.

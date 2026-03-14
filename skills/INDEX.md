@@ -9,8 +9,9 @@ Comprehensive catalog of all available Claude Code skills organized by category.
 | [Claude Meta](#claude-meta) | 3 | Claude Code usage, collaboration, optimization |
 | [Project Management](#project-management) | 4 | Project setup, folder organization, environment management, note-taking, backups |
 | [Packaging](#packaging) | 1 | Bioconda recipe development |
-| [Galaxy](#galaxy) | 3 | Galaxy platform development & automation |
-| [Bioinformatics](#bioinformatics) | 2 | Genome assembly, sequencing analysis |
+| [Galaxy](#galaxy) | 4 | Galaxy platform development, automation & training |
+| [VGP](#vgp) | 2 | VGP assembly workflows, GenomeArk data access |
+| [Bioinformatics](#bioinformatics) | 2 | Core bioinformatics, sequencing analysis |
 | [Analysis](#analysis) | 1 | Jupyter notebooks, statistical analysis |
 | [Collaboration](#collaboration) | 2 | Project sharing, collaborative documentation |
 
@@ -131,11 +132,47 @@ Galaxy platform development, automation, and workflows.
 - **When to use:** Creating Galaxy workflows, IWC submissions, workflow optimization, validation
 - **Key topics:** .ga format, IWC standards, workflow testing, best practices, optimization
 
+### training-material
+- **Path:** `galaxy/training-material/`
+- **Version:** 1.0.0
+- **Description:** Expert in Galaxy Training Network (GTN) tutorial development. GTN markdown syntax, special boxes, tool references, snippets, YAML front matter, and best practices for writing and updating training materials.
+- **When to use:** Writing or editing GTN tutorials, creating new training content, understanding GTN-specific markdown syntax, fixing formatting issues
+- **Key topics:** GTN markdown boxes (hands_on, question, tip, comment, details, warning), tool references, parameter icons, snippets, YAML front matter, slides, data libraries, pedagogical best practices
+
+---
+
+## VGP
+
+Vertebrate Genomes Project (VGP) specific skills for assembly workflows and data access.
+
+### vgp-pipeline
+- **Path:** `vgp/vgp-pipeline/`
+- **Version:** 2.0.0
+- **Dependencies:** galaxy-automation
+- **Description:** VGP genome assembly orchestration. Workflow sequences, quality control checkpoints for producing high-quality, phased, chromosome-level genome assemblies using Galaxy workflows.
+- **When to use:** VGP genome assembly projects, workflow selection, trajectory planning, quality control checkpoints
+- **Key topics:** Assembly trajectories (HiFi+Hi-C, Trio, HiFi-only), workflow sequences (WF1-WF9), quality checkpoints, GenomeScope integration
+- **Additional resources:**
+  - `MIGRATION.md` - Migration guide for workflow updates
+
+### genomeark-aws
+- **Path:** `vgp/genomeark-aws/`
+- **Version:** 1.0.0
+- **Description:** Comprehensive guide for accessing GenomeArk AWS S3 public bucket containing VGP assemblies and QC data. Includes directory structure, all filename patterns, data validation, and best practices for fetching GenomeScope, BUSCO, Merqury metrics, and meryl histograms.
+- **When to use:** Accessing VGP genome data from S3, fetching QC metrics, downloading meryl histograms, building automated data retrieval pipelines, troubleshooting S3 access issues
+- **Key topics:** S3 bucket structure, GenomeScope/BUSCO/Merqury data locations, filename pattern variations, case sensitivity, data validation, AWS CLI usage, batch processing, rate limiting
+- **Critical features:**
+  - Three GenomeScope filename patterns (includes easily-missed single underscore pattern)
+  - GenomeScope validation logic (detect failed runs)
+  - Evolution of directory structure (2022 → 2024+)
+  - Meryl histogram access (700KB vs 10GB full database)
+  - No credentials required (--no-sign-request)
+
 ---
 
 ## Bioinformatics
 
-Domain-specific bioinformatics knowledge.
+Core bioinformatics concepts and analysis patterns.
 
 ### fundamentals
 - **Path:** `bioinformatics/fundamentals/`
@@ -147,13 +184,11 @@ Domain-specific bioinformatics knowledge.
   - `reference.md` - Format specifications and examples
   - `common-issues.md` - Troubleshooting guide
 
-### vgp-pipeline
-- **Path:** `bioinformatics/vgp-pipeline/`
-- **Description:** VGP genome assembly orchestration. Workflow sequences, GenomeArk integration, quality control checkpoints for producing high-quality, phased, chromosome-level genome assemblies.
-- **When to use:** VGP genome assembly projects, workflow selection, quality control
-- **Key topics:** Assembly trajectories (HiFi+Hi-C, Trio), workflow sequences (WF1-WF9), GenomeArk, quality checkpoints
-- **Additional resources:**
-  - `MIGRATION.md` - Migration guide for workflow updates
+### phylogenetics
+- **Path:** `bioinformatics/phylogenetics/`
+- **Description:** Phylogenetic tree construction, analysis, and visualization. Tree reconciliation, species mapping, and evolutionary analysis.
+- **When to use:** Building phylogenetic trees, evolutionary analysis, tree-based visualizations
+- **Key topics:** Tree construction, newick format, species reconciliation, time trees
 
 ---
 
@@ -202,6 +237,9 @@ galaxy/tool-wrapping
 
 galaxy/automation
   └─ requires: bioblend, planemo
+
+vgp/vgp-pipeline
+  └─ depends on: galaxy/automation
 ```
 
 ---
@@ -232,6 +270,8 @@ Use these commands regularly for optimal workflow:
 **Project Organization:**
 - `/consolidate-notes` - Weekly/bi-weekly consolidation with AI analysis and project status updates
 - `/backup` - Create daily or milestone backups
+- `/update-manifest` - Update MANIFEST files with session changes
+- `/deprecate-file` - Move files to deprecated/ with dependency tracking and MANIFEST updates
 
 **Setup & Help:**
 - `/setup-project` - Initialize new projects with skills and commands
@@ -280,9 +320,12 @@ skill-name/
 
 ## Maintenance
 
-**Last updated:** 2026-02-25
+**Last updated:** 2026-03-02
 
 **Recent changes:**
+- 2026-03-02: Added galaxy/training-material skill (GTN tutorial syntax, structure, and best practices)
+- 2026-02-26: Created VGP category, moved vgp-pipeline and genomeark-aws from bioinformatics to vgp
+- 2026-02-26: Added genomeark-aws skill (comprehensive GenomeArk S3 access guide)
 - 2026-02-25: Deduplicated content across skills, added cross-reference section
 - 2026-02-25: Added Claude API image size constraints to data-visualization and jupyter-notebook skills
 

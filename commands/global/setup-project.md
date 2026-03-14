@@ -72,6 +72,8 @@ EOF
    ```bash
    ln -s $CLAUDE_METADATA/commands/global/update-skills.md .claude/commands/
    ln -s $CLAUDE_METADATA/commands/global/list-skills.md .claude/commands/
+   ln -s $CLAUDE_METADATA/commands/global/update-manifest.md .claude/commands/
+   ln -s $CLAUDE_METADATA/commands/global/deprecate-file.md .claude/commands/
    ```
 
 6. **Symlink global settings for consistent permissions**:
@@ -264,6 +266,8 @@ EOF
    - /sync-skills (sync with global metadata)
    - /setup-environment (Python environment setup)
    - /cleanup-project (project cleanup)
+   - /update-manifest (update MANIFEST files)
+   - /deprecate-file (move files to deprecated/)
 
 ✅ Symlinked global settings.local.json:
    - Permissions will be consistent across all projects

@@ -1,3 +1,9 @@
+---
+name: hackmd
+description: HackMD collaborative markdown - slide presentations, embedded SVG diagrams, and real-time editing best practices
+allowed-tools: Read, Grep, Glob, Bash
+---
+
 # HackMD Skill
 
 ## Overview

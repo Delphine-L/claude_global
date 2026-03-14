@@ -1,6 +1,9 @@
-# Generate MANIFEST Command
+---
+name: generate-manifest
+description: Generate or update MANIFEST.md file inventories for project navigation and context efficiency
+---
 
-Generate or update a MANIFEST.md file for the current directory or specified subdirectory. This command helps maintain project navigation and context efficiency by creating comprehensive file inventories.
+# Generate MANIFEST Command
 
 ## Instructions
 

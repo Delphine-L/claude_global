@@ -1,6 +1,7 @@
 ---
 name: list-skills
 description: List all available skills in $CLAUDE_METADATA with descriptions
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 List all available Claude Code skills in `$CLAUDE_METADATA` with their descriptions and status.

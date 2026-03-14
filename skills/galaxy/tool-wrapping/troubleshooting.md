@@ -323,6 +323,30 @@ Don't add everything at once!
 - Report tool has all needed R packages
 - Both tools work correctly
 
+### Problem: Report shows wrong statistics (v0.0.8)
+- HTML report from `rdeval_report` showed wrong read lengths, N50, plots
+- Tabular output from `rdeval --tabular` was correct
+- Issue was in upstream `rdeval_interface.R`, not the Galaxy wrapper
+
+### Debugging approach
+1. **Compare outputs**: Galaxy tabular vs HTML report vs CLI report on same data
+2. **Trace the pipeline**: rdeval → .rd file → R interface → HTML report
+3. **Verify .rd files**: Run `rdeval --input-reads file.rd --tabular` to confirm .rd data is correct
+4. **Test R interface locally**: Run `rdeval_interface.R` on the .rd file to isolate the R reader
+5. **Binary format analysis**: Compute expected data sizes to identify format mismatch
+   - `5*len8 + 6*len16 + 12*len64` vs `8*len8 + 8*len16 + 16*len64`
+6. **Check release artifacts**: Compare release zip sha256 with conda recipe to detect silent updates
+
+### Lesson
+When upstream tools bundle companion scripts (R, Python), format changes in the binary can break the script readers. Always verify both sides match.
+
+### Naming in report tools
+When a report tool processes collection elements, use `element_identifier` not numeric indices:
+```xml
+#set $safe_name = re.sub(r"[^\w\-.]", "_", str($input_file.element_identifier))
+ln -s '$input_file' '${safe_name}.rd' &&
+```
+
 ## Testing Tips
 
 ### Local Testing
@@ -377,6 +401,142 @@ planemo test --biocontainers tool.xml
 | All tests fail same way | Systemic issue (deps/command) | Check requirements first |
 | Some tests fail | Test-specific issue | Check test parameters |
 
+## Common XML and Runtime Issues
+
+**Issue: "Command not found"**
+- Check `<requirements>` section has correct package
+- Verify conda package name and version
+- Test command availability: `planemo conda_install tool.xml`
+
+**Issue: "Output file not found" or 0-byte output with exit_code=0**
+- Verify command actually creates the file
+- Check output file path matches `<data name="output" from_work_dir="...">`
+- Use `discover_datasets` for dynamic outputs
+- **`from_work_dir` vs `$output` conflict**: If command writes to `$output` but output
+  definition has `from_work_dir="filename"`, Galaxy looks for `filename` in the working
+  directory instead. This causes 0-byte outputs especially on remote/Pulsar job runners.
+  Fix: either remove `from_work_dir` (if command uses `$output`) or change the command to
+  write to the `from_work_dir` filename instead of `$output`.
+
+**Issue: "Test failed"**
+- Compare expected vs actual output
+- Check for whitespace/newline differences
+- Use `sim_size` for approximate size matching
+- Add `lines_diff` for line-by-line comparison
+
+**Issue: Tool has multiple output flags (`-o` vs `-p`) with different behavior**
+- `-o`/`--out-file` typically writes to an explicit filename with extension
+- `-p`/`--out-prefix` typically constructs filename as `prefix + input_filename`
+- These flags may produce different output types (e.g., `-o` generates rd/binary files,
+  `-p` generates same-format-as-input files)
+- Check the tool's source code to understand naming conventions before wrapping
+- Use separate output type conditionals for each mode rather than trying to unify them
+
+**Issue: "Invalid XML"**
+- Run `planemo lint tool.xml`
+- Check closing tags match opening tags
+- Validate CDATA sections for command blocks
+- Ensure proper escaping of special characters
+
+## Debugging Tool Test Failures
+
+### General Workflow
+
+1. **Read the test output JSON first**
+   ```bash
+   cat tool_test_output.json
+   ```
+   Look for:
+   - Exit codes and error messages in `stderr`/`stdout`
+   - `output_problems` array for test assertion failures
+   - Actual vs expected output differences
+
+2. **Never copy/modify conda package scripts**
+   - Tool wrappers should ALWAYS use conda packages
+   - If there are bugs in the conda package scripts, work around them in the XML wrapper
+   - Common workaround: Add trailing slashes to paths if script concatenates without separators
+
+3. **Wrong test expectations vs bugs**
+   - If tests fail but the tool runs successfully (exit code 0), check if expected test files are wrong
+   - Regenerate expected outputs by running the tool manually with test inputs
+   - Update `expect_num_outputs` if optional outputs are created
+
+### Common Test Failure Fixes
+
+**Path concatenation bugs in Python scripts:**
+```xml
+<!-- If script does: args.output_dir + 'file.txt' without '/' -->
+<!-- Fix in wrapper with trailing slash: -->
+-o 'output_dir/'  <!-- instead of -o output_dir -->
+```
+
+**Wrong number of expected outputs:**
+```xml
+<!-- Check if optional outputs are always created -->
+<test expect_num_outputs="3">  <!-- Update count -->
+```
+
+**Output has extra sequences/data:**
+- First check if this is expected behavior
+- Regenerate expected test files from actual tool output
+- Don't add post-processing filters unless absolutely necessary
+
+**`has_size` attribute restrictions (XSD validation):**
+- `has_size` does NOT support `compare="ge"` or similar -- planemo lint will reject it
+- Use `value` and `delta` attributes: `<has_size value="148" delta="50"/>`
+- This asserts the size is within `value +/- delta` bytes
+- For minimum size checks, use a value with a large enough delta
+
+**Galaxy decompresses tar.gz/tgz files -- tool receives plain tar:**
+When a param accepts `format="tar.gz"`, `format="tgz"`, or `format="tar,gz,tgz"`,
+Galaxy may strip the gzip layer before passing the file to the tool. The tool receives
+a plain tar archive, not gzip-compressed. Symptom: `gzip: invalid magic` or
+`tar: invalid magic` when trying `tar -xzf` or `gzip -dc`.
+
+```xml
+<!-- BAD: assumes file is still gzip-compressed -->
+tar -xzf '${input_archive}' -C ./output_dir
+gzip -dc '${input_archive}' | tar xf - -C ./output_dir
+
+<!-- GOOD: use plain tar extraction (Galaxy already decompressed) -->
+tar xf '${input_archive}' -C ./output_dir
+
+<!-- For creating tar.gz output (gzip is needed here): -->
+tar cf - -C ./input_dir . | gzip > output.tar.gz
+```
+
+**Cascade failures from empty/broken upstream outputs:**
+When debugging multiple errors in a test history, check datasets in order.
+A 0-byte or errored output fed as input to a subsequent tool will produce
+misleading errors (e.g., "error reading header"). Always fix the root cause
+(first failing dataset) before investigating downstream errors.
+
+**tar flag order bug (`-xfz` vs `-xzf`):**
+`tar -xfz file.tar.gz` means "extract, file=z, then file.tar.gz is a positional arg".
+The `-f` flag consumes the next character as the filename. Error: `tar: can't open 'z'`.
+Fix: always put `-f` last (`tar -xzf`) or use positional syntax (`tar xf file`).
+
+**Test conditional nesting must match input structure:**
+If a conditional is expanded via macro inside `mode_conditional`, test params must nest it:
+```xml
+<!-- BAD: blobtk_plot_options outside mode_conditional -->
+<conditional name="mode_conditional">
+    <param name="selector" value="filter"/>
+</conditional>
+<conditional name="blobtk_plot_options">
+    <param name="blobtk_plot" value="no"/>
+</conditional>
+
+<!-- GOOD: nested inside mode_conditional -->
+<conditional name="mode_conditional">
+    <param name="selector" value="filter"/>
+    <conditional name="blobtk_plot_options">
+        <param name="blobtk_plot" value="no"/>
+    </conditional>
+</conditional>
+```
+Planemo lint reports: `WARNING (TestsCaseValidation): Invalid parameter name found`.
+
 ## Lessons Learned
 
 1. **Version changes that break existing functionality are usually dependency-related**, not platform-related
@@ -384,3 +544,6 @@ planemo test --biocontainers tool.xml
 3. **R commands with complex parameters need configfiles** to avoid quoting issues
 4. **Always test after adding new dependencies** - they may conflict with existing tools
 5. **Exit code 133 often indicates dependency conflicts**, not code bugs
+6. **When tabular output is correct but report output is wrong**, the issue is likely in the report's data reader (R/Python script), not the tool itself
+7. **Compare release zip sha256 with conda recipe** to check if release artifacts were silently updated: `shasum -a 256 release.zip` vs `meta.yaml` sha256
+8. **C struct padding can silently break companion scripts** — when C++ code changes from `sizeof(pair<...>)` to compact writes, all readers must be updated

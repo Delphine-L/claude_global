@@ -633,6 +633,145 @@ Before running a complex filtering pipeline:
 
 ---
 
+## AGP Processing Issues
+
+### Issue: Incorrect Object Coordinates When Creating Unlocs
+
+**Symptom:**
+```
+ERROR: object coordinates (1, 19328398) and component coordinates (19274039, 19328398)
+do not have the same length
+```
+
+**Cause:**
+When converting a region of a scaffold into an unlocalized sequence (unloc), the object coordinates must represent the **length** of the extracted region, not the original component end coordinate.
+
+**Wrong Approach:**
+```python
+# Setting object end to component end coordinate
+agp_df.loc[index, 'chr_end'] = agp_df.loc[index, 'scaff_end']  # WRONG
+```
+
+**Correct Approach:**
+```python
+# Calculate actual length from component coordinates
+agp_df.loc[index, 'chr_end'] = int(agp_df.loc[index, 'scaff_end']) - int(agp_df.loc[index, 'scaff_start']) + 1  # CORRECT
+```
+
+---
+
+### Issue: Component Numbering Not Reset for New Objects
+
+**Symptom:**
+Unloc scaffolds have component numbers > 1 when they should start at 1.
+
+**Cause:**
+When creating a new object (unloc scaffold), component numbering wasn't reset.
+
+**Solution:**
+```python
+# When creating unlocs, reset component number
+agp_df.loc[index, '#_scaffs'] = 1  # Column 4: component number
+```
+
+---
+
+### Issue: AGPcorrect Accumulating Coordinates
+
+**Symptom:**
+Unloc sequences inherit cumulative coordinates from parent scaffolds.
+
+**Cause:**
+AGPcorrect adjusts coordinates based on sequence length corrections. When scaffolds are later split into unlocs, the accumulated corrections need to be recalculated based on actual component spans.
+
+**Solution:**
+Always recalculate object coordinates from component spans when creating new objects (unlocs).
+
+---
+
+### AGP Coordinate Debugging Pattern
+
+When encountering coordinate errors:
+
+```python
+# For each AGP line, verify:
+obj_length = int(obj_end) - int(obj_beg) + 1
+comp_length = int(comp_end) - int(comp_beg) + 1
+
+assert obj_length == comp_length, f"Length mismatch: obj={obj_length}, comp={comp_length}"
+
+# For sequential component numbers:
+assert comp_num == expected_num, f"Component number gap: got {comp_num}, expected {expected_num}"
+```
+
+### AGP Processing Best Practices
+
+#### Creating Unlocalized Sequences (Unlocs)
+
+```python
+# When extracting a region to create an unloc:
+# 1. Calculate the actual length of the region
+length = int(comp_end) - int(comp_start) + 1
+
+# 2. Set object coordinates for the new unloc
+obj_start = 1  # Always starts at 1
+obj_end = length  # Equals the length
+
+# 3. Reset component number
+component_num = 1  # New object, new numbering
+
+# 4. Rename the object
+new_object_name = f"{parent_scaffold}_unloc_{unloc_number}"
+```
+
+#### Validating AGP Files
+
+**Use NCBI's AGP validator:**
+```bash
+agp_validate assembly.agp
+```
+
+**Common validation checks:**
+- Object/component length match
+- Sequential component numbering
+- No coordinate overlaps
+- Gap specifications valid
+- Orientation values (+, -, ?, 0, na)
+
+#### Handling Haplotype-Split Assemblies
+
+When splitting diploid assemblies into haplotypes:
+1. Identify haplotype markers in sequence names (H1/hap1, H2/hap2)
+2. Maintain proper pairing information
+3. Process unlocs separately per haplotype
+4. Remove haplotig duplications
+5. Track gaps appropriately (especially proximity ligation gaps)
+
+### AGP File Structure by Assembly Stage
+
+**1. Raw Assembly AGP:**
+- Direct representation from assembler
+- May have incorrect sequence lengths
+- Needs coordinate correction (AGPcorrect)
+
+**2. Corrected AGP:**
+- Sequence lengths match actual FASTA
+- Coordinates adjusted for length discrepancies
+- Ready for haplotype splitting
+
+**3. Haplotype-Split AGP:**
+- Separate files per haplotype
+- Unlocs identified but not separated
+- Haplotigs marked but not removed
+
+**4. Final Curated AGP:**
+- Unlocs separated into individual objects
+- Haplotigs removed to separate file
+- Proximity ligation gaps cleaned
+- Ready for database submission
+
+---
+
 ## Getting Help
 
 When asking for help with bioinformatics issues, include:

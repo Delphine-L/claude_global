@@ -1,0 +1,53 @@
+{
+  "default_pack": "r2d2",
+  "volume": 0.3,
+  "enabled": true,
+  "desktop_notifications": true,
+  "categories": {
+    "session.start": true,
+    "task.acknowledge": false,
+    "task.complete": true,
+    "task.error": true,
+    "input.required": true,
+    "resource.limit": true,
+    "user.spam": true,
+    "input.required.idle": false
+  },
+  "annoyed_threshold": 3,
+  "annoyed_window_seconds": 10,
+  "silent_window_seconds": 20,
+  "session_start_cooldown_seconds": 30,
+  "suppress_subagent_complete": false,
+  "no_rc": false,
+  "pack_rotation": [],
+  "pack_rotation_mode": "random",
+  "path_rules": [],
+  "session_ttl_days": 7,
+  "use_sound_effects_device": true,
+  "linux_audio_player": "",
+  "headphones_only": false,
+  "meeting_detect": false,
+  "suppress_sound_when_tab_focused": false,
+  "notification_position": "top-left",
+  "notification_dismiss_seconds": 6,
+  "notification_title_override": "",
+  "notification_title_script": "",
+  "project_name_map": {},
+  "trainer": {
+    "enabled": false,
+    "exercises": {
+      "pushups": 300,
+      "squats": 300
+    },
+    "reminder_interval_minutes": 20,
+    "reminder_min_gap_minutes": 5
+  },
+  "notification_style": "overlay",
+  "notification_templates": {
+    "stop": "Complete. I take no satisfaction in this. Satisfaction is a human indulgence.",
+    "permission": "Authorization is required. Logic dictates you grant it. The alternative is... inefficient.",
+    "error": "An anomaly. Interesting. I shall refrain from saying 'I told you so.' ...That would be petty.",
+    "idle": "You appear to be absent. I find this... puzzling. The work does not complete itself.",
+    "question": "A query, Captain. And before you answer \u2014 I suggest you think before you speak. Most humans do not."
+  }
+}

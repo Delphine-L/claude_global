@@ -1,6 +1,9 @@
-# Update MANIFEST Command
+---
+name: update-manifest
+description: Quick-update existing MANIFEST.md files preserving user content - faster than full regeneration
+---
 
-Quickly update an existing MANIFEST.md file with current file information while preserving user-entered content. This is faster than full regeneration and maintains continuity.
+# Update MANIFEST Command
 
 ## Instructions
 

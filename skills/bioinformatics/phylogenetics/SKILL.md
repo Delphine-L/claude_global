@@ -1,3 +1,9 @@
+---
+name: phylogenetics
+description: Phylogenetic tree analysis, visualization, annotation management, and iTOL troubleshooting
+allowed-tools: Read, Grep, Glob, Bash
+---
+
 # Phylogenetics Skills
 
 Expert knowledge for phylogenetic tree analysis, visualization, and annotation management.

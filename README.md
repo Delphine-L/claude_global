@@ -1,223 +1,231 @@
-# Centralized Claude Code Skills & Commands
+# Claude Code Global Skills Repository
 
-Reusable Claude Code skills and commands for all projects via symlinks.
+Centralized skills and commands for Claude Code, symlinked into projects via `enable-skills.sh`. All projects share and auto-update from this single source.
 
-**📋 Quick Start:** See [`QUICK_REFERENCE.md`](QUICK_REFERENCE.md) for copy-paste setup prompts and commands.
+## Table of Contents
 
-## Directory Structure
+- [Setup](#setup)
+- [Skills](#skills)
+  - [Analysis](#analysis)
+  - [Bioinformatics](#bioinformatics)
+  - [Claude Meta](#claude-meta) (essential — auto-included)
+  - [Collaboration](#collaboration)
+  - [Databases](#databases)
+  - [Galaxy](#galaxy)
+  - [Packaging](#packaging)
+  - [Project Management](#project-management) (essential — auto-included)
+  - [VGP](#vgp)
+- [Commands](#commands)
+- [Hooks](#hooks)
+- [Adding New Skills](#adding-new-skills)
 
-```
-$CLAUDE_METADATA/
-├── skills/                    # All reusable skills (organized by category)
-│   ├── claude-meta/          # Claude Code usage & optimization
-│   ├── project-management/   # Project setup & organization
-│   ├── packaging/            # Package development
-│   ├── galaxy/               # Galaxy platform
-│   ├── bioinformatics/       # Domain-specific bio skills
-│   ├── analysis/             # Data analysis & notebooks
-│   ├── collaboration/        # Sharing & collaboration
-│   └── INDEX.md              # Comprehensive skills catalog
-├── commands/                  # Slash commands
-│   ├── global/               # All projects
-│   └── vgp-pipeline/         # Project-specific
-└── templates/                # Templates for new skills/commands
-```
-
-## How It Works
-
-Claude Code discovers skills from:
-- `~/.claude/skills/` (global)
-- `.claude/skills/` (per-project)
-
-Skills load progressively - Claude sees descriptions first, full content only when activated.
-
-## Available Skills
-
-**📚 See [`skills/INDEX.md`](skills/INDEX.md) for the complete catalog with detailed descriptions, use cases, and dependencies.**
-
-### Essential Skills (Always Include)
-
-**Claude Meta:**
-- **claude-meta/token-efficiency** - Automatic token optimization (80-90% savings)
-- **claude-meta/collaboration** - Team collaboration best practices
-
-**Project Management:**
-- **project-management/folder-organization** - Project structure and organization
-- **project-management/managing-environments** - Development environment management (venv/conda)
-- **project-management/obsidian** - Note-taking and knowledge management integration
-- **project-management/data-backup** - Smart automated backups with skill integration
-
-**Collaboration:**
-- **collaboration/hackmd** - Collaborative documentation with HackMD
-- **collaboration/project-sharing** - Prepare organized packages for sharing
-
-### Skills by Category
-
-- **Claude Meta** (3 skills) - Claude Code usage, collaboration, optimization
-- **Project Management** (4 skills) - Project setup, folder organization, environment management, note-taking, backups
-- **Collaboration** (2 skills) - Project sharing, collaborative documentation
-- **Packaging** (1 skill) - Bioconda recipe development
-- **Galaxy** (3 skills) - Galaxy platform development & automation
-- **Bioinformatics** (2 skills) - Genome assembly, sequencing analysis
-- **Analysis** (1 skill) - Jupyter notebooks, statistical analysis
-
-Browse the full catalog: [`skills/INDEX.md`](skills/INDEX.md)
-
-## Global Commands (commands/global/)
-
-### Essential Commands (Use Regularly)
-
-**Session Management:**
-- **`/safe-exit`** - Safely end session with backup and Obsidian summary prompts (use instead of `exit`)
-- **`/safe-clear`** - Context clearing with knowledge preservation (save notes and skills, then clear)
-
-**Project Organization:**
-- **`/consolidate-notes`** - Consolidate session notes with AI analysis, update project status, and archive (weekly/bi-weekly)
-- **`/backup`** - Smart backup system with skill integration (daily/milestone backups)
-
-**Setup & Discovery:**
-- **`/setup-project`** - Initialize new project with essential skills
-- **`/command-help`** - Show help and documentation for Claude Code commands
-
-### Additional Commands
-
-**Skills & Environment:**
-- **`/sync-skills`** - Sync with $CLAUDE_METADATA, detect new skills
-- **`/list-skills`** - Show all available skills
-- **`/update-skills`** - Review session and update skills
-- **`/setup-environment`** - Plan and set up Python environment (venv or conda)
-
-**Project Maintenance:**
-- **`/share-project`** - Prepare organized packages for sharing with collaborators
-- **`/cleanup-project`** - Remove working docs, condense verbose READMEs
-
-## Recommended Workflow
-
-**Daily/Session:**
-1. Start working on your project
-2. End with **`/safe-exit`** (creates session notes + optional backup)
-   - Or use **`/safe-clear`** if switching tasks mid-session
-
-**Weekly/Bi-weekly:**
-3. Run **`/consolidate-notes`** to:
-   - Generate AI-powered project status
-   - Track completed vs pending to-dos
-   - Get improvement suggestions
-   - Archive old session notes
-
-**As Needed:**
-4. **`/backup`** - Create milestone backups
-5. **`/share-project`** - Prepare packages for collaborators
-6. **`/command-help <command>`** - Get help on any command
-
----
-
-## Setting Up a New Project
-
-### Using enable-skills.sh (Recommended)
-
-The `enable-skills.sh` script provides an interactive setup with **project type detection**:
+## Setup
 
 ```bash
+# Set environment variable (add to ~/.zshrc)
+export CLAUDE_METADATA="$HOME/Workdir/claude_global"
+
+# Enable skills in a project
 cd /path/to/your/project
 bash $CLAUDE_METADATA/enable-skills.sh
 ```
 
-**Features:**
-- **Project Type Detection** - Automatically suggests appropriate skills:
-  - **Analysis/Research** - Adds jupyter-notebook, data-analysis-patterns, data-visualization, scientific-publication, documentation-organization
-  - **Development** - Adds conda-recipe for package development
-  - **Bioinformatics** - Adds bioinformatics/fundamentals, galaxy tools, VGP pipeline skills
-  - **Other/Mixed** - Manual skill selection
-- **Obsidian Integration** - Configure project notes location
-- **Smart Suggestions** - Recommends skills based on your project type
-- **Essential Skills** - Always includes core skills (token-efficiency, folder-organization, managing-environments, obsidian, data-backup, project-sharing)
-- **Global Commands** - Links all commands (/safe-exit, /safe-clear, /backup, etc.)
+The setup script detects project type and suggests appropriate skills:
 
-### Quick Command Setup
+| Project Type | Suggested Skills |
+|---|---|
+| **Analysis/Research** | All `analysis/*`, `bioinformatics/*`, `databases/*`, `collaboration/hackmd`, `collaboration/project-sharing` |
+| **Development** | `packaging/conda-recipe` |
+| **Bioinformatics** | All `galaxy/*` |
 
-**Quick Start:**
+All `claude-meta/*` and `project-management/*` skills are always included as essentials.
+
+## Skills
+
+### Analysis
+
+| Skill | Description |
+|---|---|
+| `data-analysis-patterns` | Data aggregation, recalculation vs reuse, category management, analytical accuracy. |
+| `data-visualization` | Publication-quality figures with matplotlib/seaborn. Journal-specific `.mplstyle` files (Nature/Science/Cell), colorblind-safe palettes, figure export helpers, Claude API image constraints. |
+| `documentation-organization` | Structure working files, prepare sharing packages, clean project layout. |
+| `jupyter-notebook` | Comprehensive notebook analyses with statistical rigor, outlier handling, publication-quality visualizations. |
+| `scientific-publication` | Iterative refinement of publication figures — systematic improvement, layout optimization. |
+
+### Bioinformatics
+
+| Skill | Description |
+|---|---|
+| `fundamentals` | SAM/BAM, AGP, sequencing technologies (Hi-C, HiFi, Illumina), quality metrics, alignment debugging. |
+| `phylogenetics` | Phylogenetic tree analysis, visualization, annotation management, iTOL troubleshooting. |
+| `visualization` | Publication-quality bioinformatics figures — phylogenetic trees, genome browsers, iTOL datasets. |
+
+### Claude Meta
+
+Essential skills defining how Claude works with you. **Auto-included in all projects.**
+
+| Skill | Description |
+|---|---|
+| `collaboration` | Team workflows — skill management, knowledge capture, version control. |
+| `documentation` | Session documentation — incremental summaries, fix reports, audit trails. |
+| `skill-management` | Creating, symlinking, updating, and organizing the centralized skill repository. |
+| `systematic-debugging` | 4-phase debugging: root cause → pattern analysis → hypothesis → fix. Anti-rationalization tables. |
+| `token-efficiency` | Token optimization — efficient file reading, command execution, model selection (Opus for learning, Sonnet for dev). |
+| `verification-before-completion` | Evidence-based completion claims. Run verification before claiming success. |
+
+### Collaboration
+
+| Skill | Description |
+|---|---|
+| `hackmd` | Slide presentations, embedded SVG diagrams, real-time collaborative editing. |
+| `project-sharing` | Prepare organized sharing packages at different levels (Summary/Reproducible/Full). |
+
+### Databases
+
+| Skill | Description |
+|---|---|
+| `bioservices` | Unified Python interface to 40+ bioinformatics services (UniProt, KEGG, ChEMBL, Reactome, PSICQUIC). Cross-database analysis and ID mapping. |
+| `gget` | Fast CLI/Python queries to 20+ databases — gene info, BLAST, AlphaFold, enrichment, single-cell, disease associations. |
+| `gnomad` | gnomAD GraphQL API — population allele frequencies, constraint scores (pLI, LOEUF), variant pathogenicity, ACMG criteria. |
+
+### Galaxy
+
+| Skill | Description |
+|---|---|
+| `automation` | BioBlend and Planemo — Galaxy API, workflow invocation, batch processing, dataset management. |
+| `tool-wrapping` | Galaxy tool wrapper XML, Planemo testing, best practices. |
+| `training-material` | GTN tutorial development — markdown syntax, special boxes, tool references, YAML front matter. |
+| `workflow-development` | Galaxy .ga workflows, IWC standards, testing, optimization. |
+
+### Packaging
+
+| Skill | Description |
+|---|---|
+| `conda-recipe` | Conda/bioconda recipe creation, linting, dependency management, build debugging. |
+
+### Project Management
+
+Essential skills. **Auto-included in all projects.**
+
+| Skill | Description |
+|---|---|
+| `data-backup` | Smart backups with project type detection. Rolling daily, compressed milestones, CHANGELOG. |
+| `folder-organization` | Project folder structure, file naming conventions, directory standards. |
+| `managing-environments` | Python venv and conda environment management. |
+| `obsidian` | Obsidian vault integration — notes, tasks, knowledge management, MOCs, CLI (1.12+). |
+
+### VGP
+
+| Skill | Description |
+|---|---|
+| `genomeark-aws` | GenomeArk AWS S3 bucket — VGP assemblies, QC data, species directories. |
+| `vgp-pipeline` | VGP assembly pipeline — Galaxy workflow selection, QC checkpoints, batch orchestration. |
+
+## Commands
+
+### Session Management
+
+| Command | Description |
+|---|---|
+| `/safe-exit` | End session with backup and Obsidian summary. |
+| `/safe-clear` | Save notes to Obsidian, update skills, clear context. |
+
+### Project Organization
+
+| Command | Description |
+|---|---|
+| `/backup` | Smart backup with skill-aware cleanup. |
+| `/consolidate-notes` | Consolidate session notes with AI-powered analysis. |
+| `/cleanup-project` | Remove working docs, condense verbose READMEs. |
+| `/deprecate-file` | Move files to deprecated/ with dependency handling. |
+| `/share-project` | Prepare sharing packages (Summary/Reproducible/Full). |
+
+### Navigation & Discovery
+
+| Command | Description |
+|---|---|
+| `/command-help` | Show help for any command. |
+| `/list-skills` | List all available skills with descriptions. |
+| `/read-manifest` | Smart session startup — load relevant context. |
+| `/generate-manifest` | Generate or update MANIFEST.md file inventories. |
+| `/update-manifest` | Quick-update MANIFEST.md preserving user content. |
+
+### Setup & Maintenance
+
+| Command | Description |
+|---|---|
+| `/setup-project` | Set up Claude Code skills for a new project. |
+| `/setup-environment` | Plan and set up Python venv or conda environment. |
+| `/sync-skills` | Sync project with global metadata — detect new skills/commands. |
+| `/update-skills` | Review session and suggest skill updates. |
+| `/update-notebook` | Notebook maintenance — figures, references, TOC, coherence. |
+
+### Planning
+
+| Command | Description |
+|---|---|
+| `/design-and-plan` | Brainstorm → design → plan → execute workflow for complex tasks. |
+
+## Hooks
+
+Hooks live in `hooks/` and are symlinked to `~/.claude/hooks/`. Configured in `~/.claude/settings.json` with portable `~/` paths.
+
 ```bash
-/setup-project  # Auto-detects project type and sets up skills
+# Setup on a new machine
+mkdir -p ~/.claude/hooks
+ln -s $CLAUDE_METADATA/hooks/safety ~/.claude/hooks/safety
+ln -s $CLAUDE_METADATA/hooks/peon-ping ~/.claude/hooks/peon-ping
 ```
 
-### Manual Setup
+### Safety Hooks (`hooks/safety/`)
+
+#### Blocking (PreToolUse)
+
+| Hook | Matcher | What it does |
+|---|---|---|
+| `git-guard.sh` | `Bash` | Blocks `reset --hard`, `push --force`, `clean -f`, `checkout -- .`, `stash drop/clear`, `branch -D` |
+| `protect-files.sh` | `Write\|Edit` | Blocks edits to `.env`, `raw/`, `datasets/`, `.log`, lock files |
+
+#### Context Preservation
+
+| Hook | Event | What it does |
+|---|---|---|
+| `context-reinject.sh` | `SessionStart` / `compact` | Re-injects branch, commits, conda env, project-config, and PROGRESS.md after compaction |
+| `transcript-backup.sh` | `PreCompact` | Saves transcript before compaction (keeps last 20) |
+
+#### Progress Tracking
+
+| Hook | Event | What it does |
+|---|---|---|
+| Prompt hook | `SessionEnd` (`clear\|logout\|prompt_input_exit`) | Claude writes/updates PROGRESS.md with task summary, accomplishments, next steps, key decisions. Also updates MANIFEST.md if present. |
+| Prompt hook | `PreCompact` | Same as above — preserves context before compaction |
+| `progress-update-fallback.sh` | `SessionEnd`, `PreCompact` | Fallback if prompt hook fails — writes mechanical PROGRESS.md from git state (branch, recent commits, changed files) or filesystem (recent files, project contents). Skips if PROGRESS.md was updated in the last 60s. |
+
+#### Auto-formatting (PostToolUse, async)
+
+| Hook | Matcher | What it does |
+|---|---|---|
+| `auto-format.sh` | `Edit\|Write` | Runs `ruff format` on .py files |
+| `notebook-strip.sh` | `Edit\|Write\|NotebookEdit` | Runs `nbstripout` on .ipynb files |
+| `command-audit.sh` | `Bash` | Logs commands to `.claude/command-audit.log` |
+
+### Peon Ping (`hooks/peon-ping/`)
+
+Sound notification system that plays audio cues on hook events (session start/end, tool use, errors, etc.). Supports multiple voice packs, volume control, and push notifications (ntfy, Pushover, Telegram) via environment variables.
+
+| Config | Description |
+|---|---|
+| `config.json` | Volume, active pack, rotation mode, notification settings |
+| `packs/` | Voice pack sound files |
+| `scripts/` | Helper scripts for renaming, usage tracking |
+
+## Adding New Skills
+
 ```bash
-mkdir -p .claude/skills .claude/commands
-
-# Essential skills (always include)
-# Claude Meta
-ln -s $CLAUDE_METADATA/skills/claude-meta/token-efficiency .claude/skills/token-efficiency
-ln -s $CLAUDE_METADATA/skills/claude-meta/collaboration .claude/skills/collaboration
-
-# Project Management
-ln -s $CLAUDE_METADATA/skills/project-management/folder-organization .claude/skills/folder-organization
-ln -s $CLAUDE_METADATA/skills/project-management/managing-environments .claude/skills/managing-environments
-ln -s $CLAUDE_METADATA/skills/project-management/obsidian .claude/skills/obsidian
-ln -s $CLAUDE_METADATA/skills/project-management/data-backup .claude/skills/data-backup
-
-# Collaboration
-ln -s $CLAUDE_METADATA/skills/collaboration/hackmd .claude/skills/hackmd
-ln -s $CLAUDE_METADATA/skills/collaboration/project-sharing .claude/skills/project-sharing
-
-# Global commands (always include)
-ln -s $CLAUDE_METADATA/commands/global/*.md .claude/commands/
-
-# Project-specific skills (add as needed)
-ln -s $CLAUDE_METADATA/skills/galaxy/automation .claude/skills/automation  # For Galaxy projects
-ln -s $CLAUDE_METADATA/skills/bioinformatics/vgp-pipeline .claude/skills/vgp-pipeline  # For VGP projects
-ln -s $CLAUDE_METADATA/skills/category/your-skill .claude/skills/your-skill
-```
-
-See `QUICK_REFERENCE.md` for detailed prompts and workflows.
-
-## Adding New Skills/Commands
-
-**Using templates (recommended):**
-```bash
-./templates/create-skill.sh my-skill "Description"
-./templates/create-command.sh category cmd-name "Description"
-```
-
-**Manual:**
-```bash
-# Skill (choose appropriate category: claude-meta, environments, galaxy, bioinformatics, analysis, tools)
 mkdir skills/category/my-skill
-cat > skills/category/my-skill/SKILL.md << 'EOF'
----
-name: my-skill
-description: Brief description
-version: 1.0.0
----
-# Skill content...
-EOF
-
-# Update skills/INDEX.md with the new skill
-
-# Command
-cat > commands/global/my-cmd.md << 'EOF'
----
-name: my-cmd
-description: Brief description
----
-Command prompt...
-EOF
+# Create SKILL.md with frontmatter (name, description, version, allowed-tools)
+# Keep SKILL.md under 500 lines — move details to supporting files
+# Add to enable-skills.sh suggested list if appropriate
 ```
 
-See `templates/README.md` for details.
-
-## Troubleshooting
-
-**Skill not activating:**
-- Mention skill name explicitly
-- Check `ls -la .claude/skills/` for symlink
-- Verify SKILL.md has frontmatter
-
-**Command not found:**
-- Check `ls -la .claude/commands/`
-- Verify command has frontmatter
-- Restart Claude Code session
-
-**Symlink issues:**
-- Use absolute paths: `$CLAUDE_METADATA/...`
-- Check target exists and permissions
+See `skills/claude-meta/skill-management/` for the complete guide.

@@ -1,6 +1,7 @@
 ---
 name: cleanup-project
 description: End-of-project cleanup - removes working documentation and condenses verbose READMEs for files changed in current git branch
+disable-model-invocation: true
 ---
 
 Perform end-of-project documentation cleanup, analyzing only files changed in the current git branch.

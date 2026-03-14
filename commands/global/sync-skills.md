@@ -5,389 +5,144 @@ description: Sync project with $CLAUDE_METADATA - detect new skills/commands to 
 
 Compare this project's current skills and commands with what's available in `$CLAUDE_METADATA` and identify new additions.
 
+> **Supporting files** (read as needed):
+> - `commands/global/sync-skills/output-format.md` — Output template and recommended actions format
+> - `commands/global/sync-skills/detection-logic.md` — Project type detection rules
+> - `commands/global/sync-skills/special-cases.md` — Edge cases: broken symlinks, missing .claude/, symlinked settings
+
 ## Your Task
 
-### Step 1: Analyze Current Project
+### Step 0: Resolve Project Root
 
-**Check what's currently symlinked:**
+**CRITICAL**: Skills and commands are stored at the **git repository root**, not in subdirectories.
+
 ```bash
-# Current skills
-ls -la .claude/skills/ 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+echo "Git root: $PROJECT_ROOT"
+echo "Current dir: $PWD"
 
-# Current commands
-ls -la .claude/commands/ 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
+if [ "$PROJECT_ROOT" != "$PWD" ]; then
+  echo "NOTE: Working in subdirectory. Checking .claude/ at project root."
+fi
 
-# Check settings
-if [ -L .claude/settings.local.json ]; then
-  echo "Settings: symlinked ✅ -> $(readlink .claude/settings.local.json)"
-elif [ -f .claude/settings.local.json ]; then
-  echo "Settings: local file (not symlinked) ⚠️"
-else
-  echo "Settings: not found"
+if [ -d ".claude" ] && [ "$PROJECT_ROOT/.claude" != "$PWD/.claude" ]; then
+  echo "WARNING: Subdirectory has its own .claude/ - may override root settings"
+  ls "$PWD/.claude/" 2>/dev/null
 fi
 ```
 
-**Detect broken symlinks (CRITICAL - always check this):**
-```bash
-# Check for broken skill symlinks
-for skill in .claude/skills/* 2>/dev/null; do
-  if [ -L "$skill" ] && [ ! -e "$skill" ]; then
-    echo "BROKEN SKILL: $skill -> $(readlink "$skill")"
-  fi
-done
+### Step 1: Analyze Current Project
 
-# Check for broken command symlinks
-for cmd in .claude/commands/* 2>/dev/null; do
-  if [ -L "$cmd" ] && [ ! -e "$cmd" ]; then
-    echo "BROKEN COMMAND: $cmd -> $(readlink "$cmd")"
+**Check what's currently symlinked (at project root):**
+```bash
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+
+# Current skills
+ls -la "$PROJECT_ROOT/.claude/skills/" 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
+
+# Current commands
+ls -la "$PROJECT_ROOT/.claude/commands/" 2>/dev/null | grep "^l" | awk '{print $9, "->", $11}'
+
+# Check project settings
+if [ -L "$PROJECT_ROOT/.claude/settings.local.json" ]; then
+  echo "Settings: symlinked -> $(readlink "$PROJECT_ROOT/.claude/settings.local.json")"
+elif [ -f "$PROJECT_ROOT/.claude/settings.local.json" ]; then
+  echo "Settings: local file"
+else
+  echo "Settings: not found"
+fi
+
+# Check global settings
+[ -f ~/.claude/settings.local.json ] && echo "Global settings: found" || echo "Global settings: NOT FOUND"
+```
+
+**Detect broken symlinks (CRITICAL):**
+```bash
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+
+for item in "$PROJECT_ROOT/.claude/skills/"* "$PROJECT_ROOT/.claude/commands/"*; do
+  if [ -L "$item" ] && [ ! -e "$item" ]; then
+    echo "BROKEN: $item -> $(readlink "$item")"
   fi
 done
 ```
 
-**Extract names of currently linked skills and commands:**
+**Check for subdirectory settings overrides:**
 ```bash
-# Skill names (only working symlinks)
-current_skills=$(ls .claude/skills/ 2>/dev/null | sort)
-
-# Command names (only working symlinks)
-current_commands=$(ls .claude/commands/ 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.md$//' | sort)
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+find "$PROJECT_ROOT" -path "*/.claude/settings.local.json" -not -path "$PROJECT_ROOT/.claude/settings.local.json" 2>/dev/null
 ```
+
+### Step 1b: Verify Global Settings Health
+
+```bash
+if [ -f ~/.claude/settings.local.json ]; then
+  echo "Global settings found"
+  for pattern in 'Bash(ls:*)' 'Bash(cat:*)' 'Bash(echo:*)' 'Bash(git:*)' 'Bash(python3:*)'; do
+    grep -q "$pattern" ~/.claude/settings.local.json 2>/dev/null && echo "  OK: $pattern" || echo "  MISSING: $pattern"
+  done
+else
+  echo "No global settings at ~/.claude/settings.local.json"
+  echo "  See $CLAUDE_METADATA/.claude/settings.local.json for reference."
+fi
+```
+
+**Expected base patterns:** `Bash(ls:*)`, `Bash(cat:*)`, `Bash(head:*)`, `Bash(grep:*)`, `Bash(find:*)`, `Bash(tree:*)`, `Bash(git:*)`, `Bash(python3:*)`, `Bash(conda:*)`, `Bash(if:*)`, `Bash(for:*)`, `Bash(while:*)`, `Bash(test:*)`, `Read(path:$CLAUDE_METADATA/*)`, `Read(path:$OBSIDIAN_VAULT/*)`, `Skill(*)`, `SlashCommand(*)`, `WebSearch`, `WebFetch(domain:*)`
 
 ### Step 2: Scan $CLAUDE_METADATA
 
-**Find all available skills:**
 ```bash
-# Global skills
+# Available skills
 ls $CLAUDE_METADATA/.claude/skills/ 2>/dev/null
-
-# Project-specific skills
 ls $CLAUDE_METADATA/skills/ 2>/dev/null
-```
 
-**Find all available commands:**
-```bash
-# All command categories
+# Available commands
 ls $CLAUDE_METADATA/commands/*/ 2>/dev/null | xargs -n1 basename | sed 's/\.md$//'
 ```
 
 ### Step 3: Compare and Categorize
 
-**Categorize into:**
-1. **NEW** - Available in $CLAUDE_METADATA but not yet symlinked here
-2. **CURRENT** - Already symlinked
-3. **BROKEN** - Symlinked but source doesn't exist (rare)
+Categorize into: **NEW** (available but not linked), **CURRENT** (already linked), **BROKEN** (link target missing).
 
 ### Step 4: Present Findings
 
-## Output Format
+Use the output format template from `commands/global/sync-skills/output-format.md`. Read that file for the full template with recommended actions.
 
-```
-# Sync Status for $PWD
-
-## Currently Linked
-
-### Settings ✅
-- settings.local.json (symlinked from $CLAUDE_METADATA)
-  └─ Permissions auto-sync across all projects
-
-### Essential Global Skills ✅
-Claude Meta:
-- token-efficiency (v1.4.0)
-- collaboration (v1.0.0)
-
-Project Management:
-- folder-organization (v1.0.0)
-- managing-environments (v1.1.0)
-- obsidian (v1.0.0)
-- data-backup (v2.0.0)
-
-Collaboration:
-- hackmd
-- project-sharing (v1.1.0)
-
-### Project-Specific Skills ✅
-- vgp-pipeline (v2.0.0)
-- galaxy-tool-wrapping (v1.0.0)
-
-### Commands ✅
-- /update-skills (global)
-- /list-skills (global)
-- /setup-project (global)
-- /check-status (vgp-pipeline)
-
----
-
-## NEW Skills Available 🆕
-
-### Essential Global Skills
-- ❌ None - all essential skills already linked ✅
-
-### Project-Specific Skills
-- **conda-recipe** (v1.0.0)
-  - Expert in conda/bioconda recipe building
-  - Recommended for: bioconda repositories
-  - Symlink: `ln -s $CLAUDE_METADATA/skills/conda-recipe .claude/skills/conda-recipe`
-
-- **galaxy-workflow-development**
-  - Galaxy workflow development with IWC standards
-  - Recommended for: Galaxy workflow repositories
-  - Symlink: `ln -s $CLAUDE_METADATA/skills/galaxy-workflow-development .claude/skills/galaxy-workflow-development`
-
-### New Global Commands 🆕
-- **generate-manifest** - Generate project manifest
-- **read-manifest** - Read project manifest
-- **update-manifest** - Update project manifest
-
-To symlink all new global commands at once:
-```bash
-# Symlink all missing global commands
-for cmd in $CLAUDE_METADATA/commands/global/*.md; do
-  cmd_name=$(basename "$cmd")
-  if [ ! -e ".claude/commands/$cmd_name" ]; then
-    ln -s "$cmd" ".claude/commands/$cmd_name"
-  fi
-done
-```
-
-### New Project-Specific Commands
-- **galaxy-workflow-development/beautify-export-wkfl** (.md)
-  - Beautify and export Galaxy workflows
-  - Symlink: `ln -s $CLAUDE_METADATA/commands/galaxy-workflow-development/beautify-export-wkfl.md .claude/commands/beautify-export-wkfl.md`
-
----
-
-## Recommended Actions
-
-Based on this project's structure, I recommend:
-
-1. **Essential (if missing):**
-   ```bash
-   # These should be in EVERY project
-
-   # Global settings (for consistent permissions)
-   ln -s $CLAUDE_METADATA/.claude/settings.local.json .claude/settings.local.json
-
-   # Claude Meta
-   ln -s $CLAUDE_METADATA/skills/claude-meta/token-efficiency .claude/skills/token-efficiency
-   ln -s $CLAUDE_METADATA/skills/claude-meta/collaboration .claude/skills/collaboration
-
-   # Project Management
-   ln -s $CLAUDE_METADATA/skills/project-management/folder-organization .claude/skills/folder-organization
-   ln -s $CLAUDE_METADATA/skills/project-management/managing-environments .claude/skills/managing-environments
-   ln -s $CLAUDE_METADATA/skills/project-management/obsidian .claude/skills/obsidian
-   ln -s $CLAUDE_METADATA/skills/project-management/data-backup .claude/skills/data-backup
-
-   # Collaboration
-   ln -s $CLAUDE_METADATA/skills/collaboration/hackmd .claude/skills/hackmd
-   ln -s $CLAUDE_METADATA/skills/collaboration/project-sharing .claude/skills/project-sharing
-
-   # Global commands (symlink all at once)
-   for cmd in $CLAUDE_METADATA/commands/global/*.md; do
-     cmd_name=$(basename "$cmd")
-     [ ! -e ".claude/commands/$cmd_name" ] && ln -s "$cmd" ".claude/commands/$cmd_name"
-   done
-   ```
-
-2. **Project-Specific (detected from codebase):**
-   ```bash
-   # Detected: recipes/ directory → bioconda repository
-   ln -s $CLAUDE_METADATA/skills/conda-recipe .claude/skills/conda-recipe
-
-   # OR
-
-   # Detected: *.ga files → Galaxy workflow repository
-   ln -s $CLAUDE_METADATA/skills/galaxy-workflow-development .claude/skills/galaxy-workflow-development
-   ```
-
-3. **Optional (based on your needs):**
-   - List other available skills
-   - User chooses
-
----
-
-**Would you like me to symlink any of these new skills/commands?**
-```
+Use project type detection rules from `commands/global/sync-skills/detection-logic.md` to recommend project-specific skills.
 
 ### Step 5: Interactive Symlinking
 
-When user requests to symlink skills/commands, execute the appropriate symlinks.
-
-**IMPORTANT: For global commands, automatically detect and symlink ALL new global commands together**
+When user requests symlinking:
 
 ```bash
-# Create directories if needed
-mkdir -p .claude/skills .claude/commands
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")
+mkdir -p "$PROJECT_ROOT/.claude/skills" "$PROJECT_ROOT/.claude/commands"
 
-# Symlink settings if not already linked
-if [ -f "$CLAUDE_METADATA/.claude/settings.local.json" ]; then
-  if [ -f .claude/settings.local.json ] && [ ! -L .claude/settings.local.json ]; then
-    echo "⚠️  Backing up existing settings.local.json to settings.local.json.backup"
-    mv .claude/settings.local.json .claude/settings.local.json.backup
-  fi
-
-  if [ ! -e .claude/settings.local.json ]; then
-    ln -s "$CLAUDE_METADATA/.claude/settings.local.json" .claude/settings.local.json
-    echo "✅ Symlinked global settings.local.json"
-  fi
-fi
-
-# Symlink skills as requested (one at a time or in batch)
-ln -s $CLAUDE_METADATA/skills/category/skill-name .claude/skills/skill-name
-
-# Symlink commands - HANDLE GLOBAL COMMANDS SPECIALLY
-# When user requests "global commands" or "new global commands", symlink ALL missing global commands:
+# For global commands — symlink ALL missing at once
 for cmd in $CLAUDE_METADATA/commands/global/*.md; do
   cmd_name=$(basename "$cmd")
-  if [ ! -e ".claude/commands/$cmd_name" ]; then
-    ln -s "$cmd" ".claude/commands/$cmd_name"
-    echo "✅ Symlinked global command: $cmd_name"
+  if [ ! -e "$PROJECT_ROOT/.claude/commands/$cmd_name" ]; then
+    ln -s "$cmd" "$PROJECT_ROOT/.claude/commands/$cmd_name"
+    echo "Symlinked global command: $cmd_name"
   fi
 done
 
-# For project-specific commands, symlink individually as requested
-ln -s $CLAUDE_METADATA/commands/category/command-name.md .claude/commands/
-
-# Verify
-ls -la .claude/skills/
-ls -la .claude/commands/
-ls -la .claude/settings.local.json
+# For skills and project-specific commands — symlink individually as requested
+ln -s $CLAUDE_METADATA/skills/category/skill-name "$PROJECT_ROOT/.claude/skills/skill-name"
 ```
 
-**Special handling for user requests:**
-- "symlink global commands" or "link new global commands" → Symlink ALL missing global commands from `$CLAUDE_METADATA/commands/global/`
-- "symlink galaxy-workflow-development" → Symlink the skill from appropriate directory
-- "symlink all new" → Ask for confirmation, then symlink all missing skills AND commands
+**Request handling:**
+- "symlink global commands" --> symlink ALL missing global commands
+- "symlink [skill-name]" --> symlink specific skill
+- "symlink all new" --> confirm, then symlink all missing skills AND commands
 
 ### Step 6: Suggest Git Commit
 
-If in git repository and changes made:
-```bash
-git status .claude/
+If changes were made, suggest committing `.claude/` changes with a descriptive message.
 
-# Suggest commit message
-git add .claude/
-git commit -m "Sync Claude Code skills and commands
+### Special Cases
 
-Added new skills:
-- skill-name (description)
-
-Added new commands:
-- /command-name
-
-Synced from $CLAUDE_METADATA"
-```
-
-## Detection Logic for Project Type
-
-**Use these indicators to recommend skills:**
-
-```bash
-# VGP pipeline ORCHESTRATION CODEBASE (not just any VGP-related project)
-# Only recommend if the actual orchestration Python code exists
-if [ -f "run_all.py" ] && [ -d "batch_vgp_run/" ]; then
-  recommend: vgp-pipeline + VGP commands
-  note: "Detected VGP pipeline orchestration codebase"
-fi
-
-# Bioconda recipes
-if ls -d recipes/ 2>/dev/null | grep -q recipes; then
-  recommend: conda-recipe
-  note: "Detected bioconda recipes directory"
-fi
-
-# Galaxy workflows (general)
-if ls *.ga 2>/dev/null | head -1; then
-  recommend: galaxy-workflow-development
-  note: "Detected Galaxy workflow files (.ga)"
-fi
-
-# Galaxy tools repository
-if ls -d tools/ 2>/dev/null | grep -q tools; then
-  recommend: galaxy-tool-wrapping
-  note: "Detected Galaxy tools directory"
-fi
-```
-
-**IMPORTANT for VGP-related projects:**
-- Only recommend `vgp-pipeline` skill if `run_all.py` AND `batch_vgp_run/` directory exist
-- If project has VGP workflows (.ga files) but NO orchestration code, recommend `galaxy-workflow-development` instead
-- If project is developing VGP tools, recommend `galaxy-tool-wrapping` instead
-- The `vgp-pipeline` skill is specifically for the orchestration codebase, not general VGP development
-
-## Special Cases
-
-### No .claude/ Directory Yet
-```
-⚠️  No .claude/ directory found.
-
-This project hasn't been set up for Claude Code yet.
-
-Would you like me to run /setup-project instead?
-```
-
-### Everything Up to Date
-```
-✅ All synced!
-
-Your project has all available skills and commands that are relevant.
-
-Current setup:
-- 8 essential global skills ✅
-- X project-specific skills ✅
-- Y commands ✅
-
-No new skills or commands available.
-```
-
-### Broken Symlinks
-
-**When you detect broken symlinks, ALWAYS:**
-1. Report them clearly to the user
-2. Check `$CLAUDE_METADATA` for renamed/moved files
-3. Offer to fix automatically (remove old + add new)
-4. Provide manual fix commands as backup
-
-**Example output:**
-```
-⚠️  Found broken symlinks:
-
-Commands:
-- exit.md → /path/to/claude_global/commands/global/exit.md (NOT FOUND)
-  └─ Likely renamed to: safe-exit.md ✓ (detected in $CLAUDE_METADATA)
-
-These symlinks point to files that have been renamed or removed.
-
-Recommended fix:
-1. Remove broken symlink: rm .claude/commands/exit.md
-2. Add new symlink: ln -s $CLAUDE_METADATA/commands/global/safe-exit.md .claude/commands/safe-exit.md
-
-Would you like me to fix this automatically?
-```
-
-**Common rename patterns to check:**
-- Commands in `global/` that may have been renamed
-- Skills that moved to subdirectories (e.g., `vgp-pipeline` → `bioinformatics/vgp-pipeline`)
-- Skills split or merged
-
-**Auto-detection strategy:**
-```bash
-# For broken command symlink "exit.md"
-# 1. Extract base name: "exit"
-# 2. Search for similar names in $CLAUDE_METADATA/commands/global/
-# 3. Check for: safe-exit.md, exit-*.md, *-exit.md
-# 4. Suggest most likely match
-
-# Example:
-ls $CLAUDE_METADATA/commands/global/ | grep -i "exit"
-# Output: safe-exit.md
-# Suggestion: "Likely renamed from exit.md to safe-exit.md"
-```
-
-**After fixing broken symlinks, verify:**
-```bash
-# Ensure no more broken links
-test -e .claude/commands/safe-exit.md && echo "✓ Fixed" || echo "✗ Still broken"
-```
+For edge cases (no .claude/ directory, symlinked settings, broken symlinks, subdirectory overrides, everything up to date), read `commands/global/sync-skills/special-cases.md`.
 
 ## Token Efficiency
 
