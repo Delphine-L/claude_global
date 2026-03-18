@@ -101,20 +101,45 @@ Update only these fields:
 - Move entry to a "Recently Removed" section at bottom
 - Or note in "Notes for Resuming Work" if significant
 
-### 5. Update Metadata Sections
+### 5. Update Active Tasks (Root MANIFEST only)
+
+**If root MANIFEST has `## Active Tasks`**, update it:
+
+#### Task Status
+Ask user: "Did you complete or start any tasks? Any new tasks to add?"
+- Update task statuses (`Active` → `Complete`, `Paused` → `In progress`, etc.)
+- Add new tasks with active files and TODOs
+- For completed tasks, move them to a `## Completed Tasks` section at the bottom
+
+#### Per-Task TODOs
+- Check off completed TODO items: `- [ ]` → `- [x] ~~text~~ (DATE)`
+- Add new TODO items the user mentions
+- **Prune completed TODOs older than 14 days** — remove `[x]` items where the date is > 14 days ago
+
+#### Active Files
+- Add/remove files from task active lists based on session work
+- Verify active files still exist
+
+#### Task Pruning
+- Move `Complete` tasks to `## Completed Tasks` archive section
+- **Remove archived tasks older than 30 days**
+
+### 5b. Purge Non-Active PROGRESS Entries
+
+**After updating Active Tasks**, cross-reference PROGRESS.md:
+- Read PROGRESS.md `## File Changelogs`
+- Collect all file paths from all Active Tasks' active files lists
+- For any file changelog entry in PROGRESS.md that is NOT in any Active Task's active files, **remove that file's changelog section**
+- Show user what was purged: "Removed PROGRESS entries for files no longer in Active Tasks: [list]"
+
+This keeps PROGRESS.md focused on currently relevant files.
+
+### 5c. Update Metadata Sections
 
 **Always update these sections**:
 
 #### Header
-- **Last Updated**: Set to today's date (use date from <env>)
-
-#### Notes for Resuming Work
-**IMPORTANT**: This section requires user input via AskUserQuestion:
-- **Current Status**: Ask user "What did you accomplish in this session?"
-- **Next Steps**: Ask user "What should be done next?"
-- **Known Issues**: Ask user "Any new issues or TODOs to note?"
-
-Don't guess or auto-generate these - they capture critical session context.
+- **Last Updated**: Set to today's date
 
 #### Quick Reference
 - Update if key outputs or entry points changed

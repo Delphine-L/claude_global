@@ -128,3 +128,48 @@ EOF
 # Generate from template
 sed "s|__MAIN_FILE__|data.csv|g" template.sh > backup.sh
 ```
+
+## 9. Adopting External Commands from Other Repos
+
+When evaluating skills/commands from other Claude Code users' GitHub repos:
+
+1. **Browse the repo tree** with `gh api "repos/OWNER/REPO/git/trees/main?recursive=1" --jq '.tree[].path'`
+2. **Fetch file contents** with `gh api "repos/OWNER/REPO/contents/PATH" --jq '.content' | base64 -d`
+3. **Evaluate relevance** — skip project-specific items (e.g., Galaxy vitest helpers for a non-Galaxy user)
+4. **Adapt to local conventions**:
+   - Add proper YAML frontmatter (`name`, `description`, `allowed-tools`)
+   - Set `context: fork` on heavy analysis commands
+   - Adjust OS-specific tools (e.g., `pbcopy` for macOS)
+   - Rename for clarity if the original name is too project-specific
+5. **Cite sources** in the README attribution block
+6. **Do NOT copy verbatim** — tailor prompts to your workflow and conventions
+
+## 10. Hook Development Safety
+
+### Never hold file descriptors in background processes
+
+Synchronous hooks must release stdout/stderr before Claude Code considers them "done":
+
+```bash
+# Any background work MUST detach from parent stdio
+( background_work ) </dev/null >/dev/null 2>&1 &
+```
+
+### Synchronous UserPromptSubmit hooks need crash protection
+
+These hooks can silently swallow user input if they exit non-zero:
+
+```bash
+set -uo pipefail  # Avoid -e (errexit)
+trap 'echo "{\"continue\": true}"; exit 0' ERR
+```
+
+### Keep installed hooks in sync with source
+
+If hooks are copied (not symlinked) from `$CLAUDE_METADATA`, fixes to the source won't propagate. After fixing a hook:
+
+```bash
+# Check if installed hook is a copy or symlink
+ls -la ~/.claude/hooks/safety/script.sh
+# If not a symlink, manually update the installed copy
+```

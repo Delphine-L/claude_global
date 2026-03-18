@@ -147,3 +147,58 @@ ls -L .claude/skills/skill-name
    find ~/Workdir -name "SKILL.md" -path "*/skill-name/*"
    # Should only show one in $CLAUDE_METADATA
    ```
+
+## Hook Troubleshooting
+
+### Background Processes in Synchronous Hooks (fd Leak)
+
+**Symptom:** All user input disappears instantly with no spinner or response. Disabling all hooks (`"disableAllHooks": true` in `settings.json`) fixes it.
+
+**Root cause:** A synchronous hook spawns a background process with `( ... ) &`. The child inherits the parent's stdout pipe. Claude Code waits for EOF on that pipe before considering the hook "done." The background child keeps the fd open indefinitely, so Claude Code hangs.
+
+**Fix:** Redirect all file descriptors in the background subshell:
+```bash
+# BAD — child holds parent's stdout pipe open
+(
+    while true; do sleep 900; do_work; done
+) &
+
+# GOOD — detach child from parent's stdio
+(
+    while true; do sleep 900; do_work; done
+) </dev/null >/dev/null 2>&1 &
+```
+
+**Key insight:** This affects ALL synchronous hooks that spawn background processes, not just `SessionStart`. The same pattern in `UserPromptSubmit`, `PreToolUse`, or `PreCompact` hooks would cause identical symptoms.
+
+### Silent Input Swallowing from Hook Crashes
+
+**Symptom:** Same as above — input disappears with no response.
+
+**Root cause:** A synchronous `UserPromptSubmit` hook exits non-zero (crash) or returns invalid JSON. Claude Code blocks the prompt.
+
+**Fix:** Add a safety trap at the top of synchronous UserPromptSubmit hooks:
+```bash
+set -uo pipefail  # NOT -euo — remove -e
+trap 'echo "{\"continue\": true}"; exit 0' ERR
+```
+
+This ensures the hook always passes the prompt through, even on unexpected errors.
+
+### Binary Search Method for Isolating Broken Hooks
+
+When hooks break Claude Code and you can't identify which one:
+
+1. Set `"disableAllHooks": true` to confirm hooks are the cause
+2. Replace ALL hooks with a minimal passthrough:
+   ```bash
+   #!/bin/bash
+   cat > /dev/null
+   echo '{"continue": true}'
+   exit 0
+   ```
+3. If that works, restore hooks by **event type** (SessionStart, UserPromptSubmit, etc.) one at a time
+4. Once the broken event type is found, test hooks within that group individually
+5. Each test requires a **new session** (hooks load at startup)
+
+**Tip:** Create `~/.claude/hooks/safety/test-passthrough.sh` as a permanent diagnostic tool.

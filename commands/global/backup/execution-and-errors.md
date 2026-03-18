@@ -23,10 +23,37 @@ echo "💾 Running daily backup..."
 ```
 
 **Milestone backup:**
-```bash
-echo "💾 Creating milestone backup..."
-./backup_project.sh milestone "$DESCRIPTION"
-```
+
+Before creating the backup, run MANIFEST and PROGRESS maintenance:
+
+1. **Update MANIFEST** — Execute `/update-manifest` to capture final state:
+   - Update Active Tasks statuses and TODOs
+   - Verify file existence
+   - Update timestamps
+
+2. **Create the backup**:
+   ```bash
+   echo "💾 Creating milestone backup..."
+   ./backup_project.sh milestone "$DESCRIPTION"
+   ```
+
+3. **Purge PROGRESS.md** — The backup captures full project state, so PROGRESS can start fresh:
+   ```
+   📝 Milestone backup complete. Purging PROGRESS.md...
+   ```
+   - Replace PROGRESS.md contents with empty structure:
+     ```markdown
+     # Progress
+
+     ## File Changelogs
+
+     <!-- Per-file history. Managed by /safe-exit and /safe-clear. -->
+     <!-- Previous history preserved in milestone backup: [backup path] -->
+
+     ## Last Session Save
+     <!-- Emergency fallback. Managed by hooks. -->
+     ```
+   - Show user: "PROGRESS.md purged — previous history preserved in milestone backup."
 
 **List backups:**
 ```bash

@@ -165,6 +165,39 @@ Essential skills. **Auto-included in all projects.**
 | Command | Description |
 |---|---|
 | `/design-and-plan` | Brainstorm → design → plan → execute workflow for complex tasks. |
+| `/plan-interview` | Deep interactive Q&A about a plan, then rewrites it with your answers. |
+| `/plan-research-questions` | Parallel subagents research each open question in a plan. |
+| `/plan-integrate-questions` | Merge answered questions back into the plan body. |
+| `/plan-review` | Review an unimplemented plan for clarity, correctness, and feasibility. |
+| `/plan-debrief` | Compare implementation against a plan — find gaps and propose next steps. |
+| `/plan-summary` | Summarize next steps from a plan with repo verification. |
+| `/plan-clean` | Renumber phases/steps sequentially and update all cross-references. |
+
+### Code Quality
+
+| Command | Description |
+|---|---|
+| `/dedup` | Semantic duplication analysis with concrete refactoring recommendations. |
+| `/review-test` | Review tests for quality — challenge weak assertions, find dead tests. |
+| `/challenge-mocks` | Challenge Python mock/patch usage, suggest DI, fakes, and real alternatives. |
+
+### Git Workflow
+
+| Command | Description |
+|---|---|
+| `/decompose-for-rebase` | Break a messy commit into smaller, focused commits for interactive rebase. |
+| `/deconflict` | Resolve rebase/merge conflicts with clear explanation. |
+
+### Clipboard Utilities
+
+| Command | Description |
+|---|---|
+| `/clipdoc` | Copy file contents to the system clipboard. |
+| `/clippath` | Copy a file's absolute path to the system clipboard. |
+
+> **Attribution:**
+> - `/design-and-plan` inspired by [obra/superpowers](https://github.com/obra/superpowers/) brainstorming and writing-plans skills.
+> - Planning suite, git workflow, code quality, and clipboard commands adapted from [jmchilton/claude-jmchilton-plugins](https://github.com/jmchilton/claude-jmchilton-plugins) and [jmchilton/claude-commands](https://github.com/jmchilton/claude-commands).
 
 ## Hooks
 

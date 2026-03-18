@@ -1,7 +1,9 @@
 #!/bin/bash
 # UserPromptSubmit hook for /peon-ping-rename command
 # Intercepts `/peon-ping-rename <name>` before it reaches the LLM
-set -euo pipefail
+set -uo pipefail
+# Safety net: if anything fails, always allow the prompt through — never silently swallow input
+trap 'echo "{\"continue\": true}"; exit 0' ERR
 
 INPUT=$(cat)
 LOG_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/peon-ping/hook-handle-rename.log"

@@ -1,6 +1,6 @@
 ---
 name: read-manifest
-description: Smart session startup - read MANIFEST, identify main documents, load relevant context for current work
+description: Smart session startup - read MANIFEST, select a task, load relevant context for current work
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -8,203 +8,176 @@ allowed-tools: Read, Grep, Glob, Bash
 
 ## Instructions
 
-You are helping the user start a work session with optimal context loading using the MANIFEST system.
+You are helping the user start a work session with task-focused context loading using the MANIFEST system.
 
 ### Step 1: Read Root MANIFEST
 
-**Read the root MANIFEST.md**:
+Read the root `MANIFEST.md`:
 ```bash
 cat MANIFEST.md
 ```
 
 If MANIFEST.md doesn't exist:
-- Inform user: "No MANIFEST.md found in this directory. Would you like to generate one with `/generate-manifest`?"
+- Inform user: "No MANIFEST.md found. Would you like to generate one with `/generate-manifest`?"
 - Exit command
 
-### Step 2: Parse Root MANIFEST
+### Step 2: Parse Active Tasks
 
-From the root MANIFEST, extract:
+From the root MANIFEST, extract the `## Active Tasks` section:
 
-1. **Main Documents** (notebooks, primary scripts, key files with Priority field):
-   - Look in "Files" → "Notebooks" section
-   - Look for files marked with `**Priority**: Main` or similar
-   - Typically .ipynb files or primary analysis files
+1. **For each task**, identify:
+   - Task name (from `### Task: ...`)
+   - Status (from `**Status**: ...`)
+   - Active files list (from `**Active files**:`)
+   - TODO items (from `**TODO**:`)
+   - Notes (from `**Notes**:`)
 
-2. **For each main document, identify dependencies**:
-   - Look at `**Depends on**:` field
-   - Note which subdirectories are referenced (data/, figures/, scripts/, etc.)
-   - Note any specific files mentioned
+2. Count pending TODOs per task (lines matching `- [ ]`).
 
-3. **Available subdirectory MANIFESTs**:
-   - Check "Key Directories" section
-   - Note which subdirectories have MANIFEST.md files
+**If no Active Tasks section exists**: Fall back to directory exploration (Step 2b).
 
-### Step 3: Present Options to User
+### Step 2b: Fallback — No Active Tasks
 
-Use AskUserQuestion to present main documents and general option:
+If MANIFEST has no `## Active Tasks` section (old format):
 
-**Question format**:
 ```
-"What would you like to work on in this session?"
+This MANIFEST uses the legacy format without Active Tasks.
+
+Options:
+1. Explore by directory (data/, figures/, scripts/, etc.)
+2. Regenerate MANIFEST with tasks: /generate-manifest
 ```
 
-**Options** (dynamically built from MANIFEST):
-1. For each main document found:
-   - **Label**: Document name (e.g., "Curation_Impact_Analysis.ipynb")
-   - **Description**: Purpose from MANIFEST (1-2 sentences)
+If user selects directory exploration, use the `## Directory Contents` or `## Key Directories` sections to present options, then read the selected subdirectory MANIFEST.
 
-2. Always include:
-   - **Label**: "Something else / general exploration"
-   - **Description**: "Browse the project without loading specific document context"
+### Step 3: Present Tasks to User
+
+Use AskUserQuestion to present tasks:
+
+**Question**: "What task are you working on?"
+
+**Options** (dynamically built):
+- For each non-Complete task:
+  - **Label**: Task name
+  - **Description**: Status — N active files, M pending TODOs
+
+- Always include:
+  - **Label**: "Something else / general exploration"
+  - **Description**: "Browse the project without loading specific task context"
 
 **Example**:
 ```
-Question: "What would you like to work on in this session?"
-Options:
-1. Curation_Impact_Analysis.ipynb - Comprehensive analysis of genome assembly quality differences between different methods of manual curation
-2. Curation_Analysis_3Categories.ipynb - Focused analysis comparing three assembly/curation methods
-3. Haplotype_Comparison_Analysis.ipynb - Detailed analysis of assembly quality between main and alternate haplotype
-4. Something else / general exploration - Browse the project without loading specific document context
+What task are you working on?
+
+1. Building phylogenetic tree — In progress — 4 files, 2 TODOs
+2. Writing curation paper — Active — 3 files, 2 TODOs
+3. Data enrichment from GenomeArk — Paused — 2 files, 1 TODO
+4. Something else / general exploration
 ```
 
 ### Step 4: Load Context Based on Selection
 
-#### If user selects a main document:
+#### If user selects a task:
 
-1. **Identify document dependencies** from MANIFEST:
-   - Which data files/directories does it use?
-   - Which figure directories does it write to?
-   - Which scripts does it call?
+1. **Identify which subdirectory MANIFESTs are needed**:
+   - For each active file, determine its parent directory
+   - Deduplicate directories
+   - Read those subdirectory MANIFESTs (if they exist)
 
 2. **Read relevant subdirectory MANIFESTs**:
    ```bash
-   # If document depends on data/
-   cat data/MANIFEST.md
-
-   # If document generates figures/
-   cat figures/MANIFEST.md
-
-   # If document uses scripts/
-   cat scripts/MANIFEST.md
+   # For each unique directory in the task's active files
+   cat data/MANIFEST.md       # if task has files in data/
+   cat figures/MANIFEST.md    # if task has files in figures/
    ```
 
-3. **Provide focused summary**:
+3. **Present focused summary**:
    ```
-   📖 Context loaded for [document name]:
+   Context loaded for: [task name]
 
-   **Main Document**:
-   - Purpose: [from MANIFEST]
-   - Priority: [from MANIFEST]
-   - Key findings: [from MANIFEST if available]
+   Active files:
+   - `path/file1` — description (from MANIFEST)
+   - `path/file2` — description (from MANIFEST)
+   - `directory/` — summary (from subdirectory MANIFEST)
 
-   **Dependencies loaded**:
-   ✓ data/MANIFEST.md - [brief summary]
-   ✓ figures/MANIFEST.md - [brief summary]
-   ✓ scripts/MANIFEST.md - [brief summary]
+   Pending TODOs:
+   - [ ] First TODO item
+   - [ ] Second TODO item
 
-   **Ready to work on**: [document name]
+   Task notes: [from MANIFEST Notes field]
 
-   You now have complete context (~X tokens) for working on this document.
+   Subdirectory context loaded:
+   ✓ data/MANIFEST.md — [brief summary]
+   ✓ figures/MANIFEST.md — [brief summary]
+
+   Ready to work on: [task name]
    ```
 
 #### If user selects "Something else":
 
-1. **Ask follow-up question**:
+1. **Present directory options** from MANIFEST:
    ```
-   "Which area of the project would you like to explore?"
+   Which area would you like to explore?
 
-   Options:
-   - Data files and processing
-   - Generated figures and visualizations
-   - Scripts and automation
-   - Documentation and notes
-   - General project overview (already loaded)
-   ```
-
-2. **Read relevant subdirectory MANIFEST** based on selection:
-   ```bash
-   cat [selected-directory]/MANIFEST.md
+   1. Data files and processing
+   2. Generated figures and visualizations
+   3. Scripts and automation
+   4. Documentation and notes
+   5. General project overview (already loaded)
    ```
 
-3. **Provide summary**:
-   ```
-   📖 Context loaded for [selected area]:
+2. Read the selected subdirectory MANIFEST.
 
-   **Overview**: [Quick summary from MANIFEST]
-   **Key files**: [List from MANIFEST]
-
-   You now have context for the [area] area of the project.
-   ```
+3. Present summary of that area.
 
 ### Step 5: Offer Next Steps
 
-After loading context, suggest next actions:
-
-**If main document selected**:
+**If task selected**:
 ```
-**Suggested next steps**:
-- Read the document: `cat [document-name]` (if you need to edit it)
-- Check recent changes: `git log --oneline [document-name] | head -5`
-- Review figures: `ls -lh figures/[relevant-subdirectory]/`
-- Update MANIFEST: `/update-manifest` (at end of session)
+Suggested next steps:
+- Start with first TODO: [first pending item]
+- Read active file: [main file for this task]
+- Check recent changes: git log --oneline [active files] | head -5
+- Update task progress: /update-manifest (at end of session)
 
 What would you like to do?
 ```
 
 **If exploration selected**:
 ```
-**Suggested next steps**:
-- List files in this area: `ls -lh [directory]/`
-- Read specific file: Let me know which file to examine
-- Generate/update MANIFEST: `/generate-manifest [directory]`
+Suggested next steps:
+- List files: ls -lh [directory]/
+- Read specific file: Let me know which to examine
+- Generate MANIFEST: /generate-manifest [directory]
 
 What would you like to explore?
 ```
 
-## Command Behavior
+---
 
-### Token Efficiency
+## Token Efficiency
 
 **Typical token usage**:
-- Root MANIFEST: ~1,500 tokens
-- 2-3 subdirectory MANIFESTs: ~1,000-2,000 tokens
-- **Total**: ~2,500-3,500 tokens for complete focused context
+- Root MANIFEST: ~800 tokens
+- 2-3 subdirectory MANIFESTs: ~500-1000 tokens each
+- **Total**: ~2,000-3,000 tokens for complete task context
 
-Compare to traditional approach:
-- Reading actual notebook: ~5,000-10,000 tokens
-- Exploring data files: ~2,000-3,000 tokens
-- Checking scripts: ~1,000-2,000 tokens
-- **Total**: ~8,000-15,000 tokens
+Compare to manual exploration: ~8,000-15,000 tokens
+**Savings**: ~70-80% token reduction with better task relevance.
 
-**Savings**: ~70-80% token reduction
+---
 
-### Smart Dependency Detection
+## Error Handling
 
-**Identify dependencies by parsing MANIFEST**:
+**No MANIFEST.md**: Suggest `/generate-manifest`
 
-Look for these patterns in the document's entry:
-```markdown
-#### `notebook_name.ipynb`
-- **Depends on**:
-  - data/vgp_assemblies_unified_corrected.csv
-  - scripts/build_unified_dataset.py
-- **Generates**:
-  - figures/curation_impact_3cat/01-06*.png
+**No Active Tasks section**: Fall back to directory exploration (Step 2b)
+
+**Missing subdirectory MANIFEST**:
 ```
-
-**From this, load**:
-- `data/MANIFEST.md` (document reads from data/)
-- `figures/MANIFEST.md` (document writes to figures/)
-- `scripts/MANIFEST.md` (document depends on scripts/)
-
-### Handling Missing MANIFESTs
-
-**If subdirectory MANIFEST doesn't exist**:
-```
-⚠️ Note: [directory]/MANIFEST.md not found
-   - Dependency: [document] uses files from [directory]/
-   - Suggestion: Generate with `/generate-manifest [directory]`
-   - For now: I can list files with `ls -lh [directory]/`
+Note: [directory]/MANIFEST.md not found
+- Suggestion: Generate with /generate-manifest [directory]
+- For now: I can list files with ls -lh [directory]/
 
 Would you like me to:
 1. Generate the MANIFEST now
@@ -212,159 +185,22 @@ Would you like me to:
 3. Continue without it
 ```
 
-### Multiple Main Documents
-
-**If project has 3+ main documents**:
-- Show all in the selection menu
-- Include brief description for each
-- Use Priority field to order (Main priority first)
-
-**If project has 1 main document**:
-- Still ask (user might want to explore instead)
-- Make main document the default/first option
-
-**If project has no clear main documents**:
-- Fall back to directory exploration
-- Suggest organizing with Priority field in MANIFEST
-
-## Usage Examples
-
-### Example 1: Focus on Main Notebook
-
-```
-User: /read-manifest
-
-Claude:
-[Reads MANIFEST.md]
-
-"What would you like to work on in this session?"
-1. Curation_Impact_Analysis.ipynb - Comprehensive analysis (MAIN)
-2. Exploration notebook - Quick data checks
-3. Something else / general exploration
-
-User: 1
-
-Claude:
-[Reads data/MANIFEST.md, figures/MANIFEST.md, scripts/MANIFEST.md]
-
-📖 Context loaded for Curation_Impact_Analysis.ipynb:
-
-**Main Document**:
-- Purpose: Comprehensive analysis of genome assembly quality differences
-- Priority: Main analysis document - START HERE
-- Last modified: 2026-02-05
-
-**Dependencies loaded**:
-✓ data/MANIFEST.md - 4 datasets, 717 assemblies
-✓ figures/MANIFEST.md - 18 figures across 3 categories
-✓ scripts/MANIFEST.md - 12 processing scripts
-
-**Ready to work on**: Curation_Impact_Analysis.ipynb
-
-Suggested next steps:
-- Read notebook: If you need to edit
-- Check recent figures: ls -lh figures/curation_impact_3cat/
-- Review data: Files in data/ are documented in loaded MANIFEST
-
-What would you like to do?
-```
-
-### Example 2: General Exploration
-
-```
-User: /read-manifest
-
-Claude:
-[Reads MANIFEST.md]
-
-"What would you like to work on in this session?"
-1. Main_Analysis.ipynb - Primary analysis
-2. Something else / general exploration
-
-User: 2
-
-Claude:
-"Which area of the project would you like to explore?"
-1. Data files and processing
-2. Generated figures and visualizations
-3. Scripts and automation
-4. Documentation and notes
-5. General project overview (already loaded)
-
-User: 2
-
-Claude:
-[Reads figures/MANIFEST.md]
-
-📖 Context loaded for figures/:
-
-**Overview**: 18 publication-quality figures across 3 analysis categories
-**Key subdirectories**:
-- curation_impact_3cat/ - 7 manuscript figures (PRIMARY)
-- corrected_analysis/ - 3 supplementary figures
-- curation_impact/ - 8 legacy figures
-
-Suggested next steps:
-- List figures: ls -lh figures/curation_impact_3cat/
-- View specific MANIFEST section for figure details
-- Regenerate figures: python scripts/generate_3category_figures.py
-
-What would you like to explore?
-```
-
-## Integration with Other Commands
-
-**Workflow patterns**:
-
-**Session start**:
-```bash
-/read-manifest              # Smart context loading
-# Work on project
-/update-manifest            # Capture progress
-```
-
-**First time in project**:
-```bash
-/read-manifest              # May prompt to generate MANIFESTs
-/generate-manifest          # If needed
-/read-manifest              # Reload with new context
-```
-
-**Focused work session**:
-```bash
-/read-manifest              # Select main document
-# Edit document, run analyses
-/update-manifest            # Update relevant MANIFESTs
-```
-
-## Best Practices
-
-1. **Use at session start**: Replace manual file exploration
-2. **Respect user choice**: If they select "something else", don't force main document context
-3. **Load only relevant MANIFESTs**: Don't load all subdirectories unless needed
-4. **Provide clear summaries**: User should understand what context was loaded
-5. **Suggest next steps**: Help user transition from context loading to work
-
-## Error Handling
-
-**No MANIFEST.md**:
-- Suggest `/generate-manifest`
-- Offer to create basic structure
-
-**Malformed MANIFEST**:
-- Read what's available
-- Note sections that are missing
-- Suggest regenerating with `/generate-manifest --update`
-
-**Missing dependencies**:
-- Note which subdirectory MANIFESTs are missing
-- Offer to generate them
-- Continue with available context
-
-**No main documents identified**:
-- Fall back to directory exploration
-- Suggest adding Priority field to MANIFEST
+**No pending TODOs in selected task**: Note this and suggest the user add TODOs via `/update-manifest`.
 
 ---
 
-**Remember**: The goal is to provide 80% of needed context in ~2,500-3,500 tokens instead of 8,000-15,000 tokens. Focus on loading what the user actually needs for their work.
+## Integration
+
+**Session start pattern**:
+```bash
+/read-manifest              # Load task context
+# Work on project...
+/update-manifest            # Capture progress
+/safe-exit                  # or /safe-clear
+```
+
+**After interrupted session**:
+```bash
+/resume-interrupted         # Recover from transcript backup
+/read-manifest              # Load task context
+```

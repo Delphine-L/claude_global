@@ -89,7 +89,38 @@ Analyze the conversation and create succinct notes covering:
 
 ---
 
-### Step 4: Update MANIFEST (Optional)
+### Step 4: Update PROGRESS.md (per-file changelogs)
+
+```
+📝 Updating PROGRESS.md with session file changelogs...
+```
+
+PROGRESS.md uses a **per-file changelog** format. For each file you modified or created during this session:
+
+1. **Identify changed files** from your session work (files you read, edited, created, or generated).
+
+2. **Append changelog entries** under `## File Changelogs`. Each file gets its own `### \`filename\`` subsection:
+   ```markdown
+   ### `data/species_tree.nwk`
+   - **Created** 2026-03-16 — Generated from IQ-TREE alignment with bootstrap
+
+   ### `scripts/build_tree.py`
+   - **Updated** 2026-03-16 — Added bootstrap support, fixed MAFFT path
+   ```
+
+3. **If the file subsection already exists**, append the new entry. If not, create a new subsection.
+
+4. **Clear `## Last Session Save`** — remove any emergency fallback data (superseded by these proper entries).
+
+5. **If PROGRESS.md doesn't exist**, create it with the standard structure (see safe-exit.md Step 3).
+
+**Entry format**: `- **Action** DATE — brief description of what and how`
+- Actions: `Created`, `Updated`, `Deleted`, `Renamed`
+- Include the command or method used when relevant
+
+---
+
+### Step 5: Update MANIFEST (Optional)
 
 Check if MANIFEST files exist in the project:
 
@@ -108,7 +139,7 @@ fi
 
 ---
 
-### Step 5: Run Update Skills Command
+### Step 6: Run Update Skills Command
 
 ```
 Reviewing session for skill updates...
@@ -127,7 +158,7 @@ Present updates organized by priority and wait for user approval before applying
 
 ---
 
-### Step 6: Confirm Context Clear
+### Step 7: Confirm Context Clear
 
 Present final confirmation showing what was preserved:
 
@@ -135,6 +166,7 @@ Present final confirmation showing what was preserved:
 Ready to clear context
 
 Session knowledge preserved:
+  • PROGRESS.md: [Updated / Created / No changes]
   • Obsidian notes: [Saved / Skipped / Not available]
   • MANIFEST updates: [Updated / Skipped / Not available]
   • Skill updates: [Applied / Skipped]
